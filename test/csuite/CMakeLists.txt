@@ -130,6 +130,14 @@ define_c_test(
 )
 
 define_c_test(
+    TARGET test_log_truncate_shutdown
+    SOURCES log_truncate_shutdown/main.c
+    DIR_NAME log_truncate_shutdown
+    ARGUMENTS -h $<SHELL_PATH:$<TARGET_FILE_DIR:test_log_truncate_shutdown>/WT_HOME>
+    DEPENDS "WT_POSIX"
+)
+
+define_c_test(
     TARGET test_wt1965_col_efficiency
     SOURCES wt1965_col_efficiency/main.c
     DIR_NAME wt1965_col_efficiency

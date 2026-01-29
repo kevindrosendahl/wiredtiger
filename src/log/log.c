@@ -1754,6 +1754,7 @@ int
 __wti_log_close(WT_SESSION_IMPL *session)
 {
     WT_CONNECTION_IMPL *conn;
+    WT_DECL_RET;
     WTI_LOG *log;
 
     conn = S2C(session);
@@ -1767,8 +1768,25 @@ __wti_log_close(WT_SESSION_IMPL *session)
     }
     if (log->log_fh != NULL) {
         __wt_verbose(session, WT_VERB_LOG, "closing log %s", log->log_fh->name);
-        if (!F_ISSET(conn, WT_CONN_READONLY))
+        if (!F_ISSET(conn, WT_CONN_READONLY)) {
+            /*
+             * Truncate the active log file to remove pre-allocated zeros. This speeds up recovery
+             * by eliminating the need to scan zeros in __log_has_hole. Only truncate if alloc_lsn
+             * points to the current file and the truncation point is past the header. Handle
+             * ENOTSUP gracefully for filesystems that don't support truncate.
+             */
+            if (log->alloc_lsn.l.file == log->fileid) {
+                wt_off_t trunc_offset = __wt_lsn_offset(&log->alloc_lsn);
+                if (trunc_offset >= log->first_record) {
+                    __wt_verbose(session, WT_VERB_LOG, "truncating log %s to offset %" PRId64,
+                      log->log_fh->name, (int64_t)trunc_offset);
+                    ret = __wt_ftruncate(session, log->log_fh, trunc_offset);
+                    if (ret != 0 && ret != ENOTSUP)
+                        WT_RET(ret);
+                }
+            }
             WT_RET(__wt_fsync(session, log->log_fh, true));
+        }
         WT_RET(__wt_close(session, &log->log_fh));
         log->log_fh = NULL;
     }
