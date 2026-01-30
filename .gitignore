@@ -24,3 +24,5 @@ TCMALLOC_LIB/
 .idea
 cmake-build-release
 cmake-build-debug
+
+sqlite
