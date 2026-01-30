@@ -77,6 +77,58 @@ Therefore, applications using commit-level durability must configure
 extensions with the \c extensions keyword to ::wiredtiger_open consistently
 whenever re-opening the database.
 
+@section commit_durability_recovery_skip Skipping Recovery on Clean Shutdown
+
+WiredTiger provides an optional optimization to skip log scanning on startup
+after a verified clean shutdown. This optimization is enabled with the
+\c "log=(recovery_skip=true)" configuration string.
+
+@subsection recovery_skip_how How It Works
+
+When \c recovery_skip is enabled and a database is closed cleanly:
+1. A shutdown marker is written to the \c WiredTiger.turtle file containing:
+   - The final log file number and offset
+   - The actual log file size after truncation
+   - A checksum for integrity verification
+
+2. On the next startup:
+   - If the marker exists in the turtle file, its checksum is validated
+   - The recorded file size is compared against the actual log file size
+   - If both checks pass, log scanning is skipped
+   - The marker is removed from the turtle file immediately after validation
+
+@subsection recovery_skip_safety Safety Guarantees
+
+This optimization maintains WiredTiger's durability guarantees:
+- If the marker is missing or corrupted, full recovery runs
+- If the log file size doesn't match the marker, full recovery runs
+- The marker is invalidated immediately on startup, before any other work,
+  so any crash during startup will result in full recovery on the next attempt
+
+@subsection recovery_skip_tradeoff Trade-offs
+
+Without this optimization, log corruption is detected \b eagerly during
+the startup log scan. With this optimization, corruption is detected
+\b lazily when the affected data is accessed.
+
+Both approaches have identical durability guarantees - committed data is
+equally durable in both cases. The only difference is \b when corruption
+is detected:
+- Eager detection (default): Corruption found at startup, before application runs
+- Lazy detection (recovery_skip): Corruption found when data is read/written
+
+@subsection recovery_skip_when When to Use
+
+Enable \c recovery_skip when:
+- Startup latency is critical for your application
+- The database is frequently cleanly shut down and restarted
+- You have other mechanisms to detect data corruption (e.g., application-level checksums)
+
+Keep \c recovery_skip disabled (the default) when:
+- You want the earliest possible detection of log corruption
+- Startup time is not a critical concern
+- You prefer fail-fast behavior over fail-on-access
+
 @section commit_durability_checkpoint Checkpoints
 
 When using commit-level durability one should still perform

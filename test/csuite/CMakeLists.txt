@@ -138,6 +138,14 @@ define_c_test(
 )
 
 define_c_test(
+    TARGET test_log_recovery_skip
+    SOURCES log_recovery_skip/main.c
+    DIR_NAME log_recovery_skip
+    ARGUMENTS -h $<SHELL_PATH:$<TARGET_FILE_DIR:test_log_recovery_skip>/WT_HOME>
+    DEPENDS "WT_POSIX"
+)
+
+define_c_test(
     TARGET test_wt1965_col_efficiency
     SOURCES wt1965_col_efficiency/main.c
     DIR_NAME wt1965_col_efficiency

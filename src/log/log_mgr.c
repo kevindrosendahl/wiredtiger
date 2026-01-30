@@ -331,6 +331,10 @@ __wt_logmgr_config(WT_SESSION_IMPL *session, const char **cfg, bool reconfig)
         WT_RET(__wt_config_gets_def(session, cfg, "log.recover", 0, &cval));
         if (WT_CONFIG_LIT_MATCH("error", cval))
             F_SET(&conn->log_mgr, WT_LOG_RECOVER_ERR);
+
+        WT_RET(__wt_config_gets(session, cfg, "log.recovery_skip", &cval));
+        if (cval.val != 0)
+            F_SET(&conn->log_mgr, WT_LOG_RECOVERY_SKIP);
     }
 
     WT_RET(__wt_config_gets(session, cfg, "log.zero_fill", &cval));
@@ -1167,6 +1171,108 @@ __wt_logmgr_open(WT_SESSION_IMPL *session)
 }
 
 /*
+ * __log_write_shutdown_marker --
+ *     Write clean shutdown state to the turtle file for fast recovery on next open.
+ *
+ * DURABILITY MODEL: This marker is written AFTER the log file has been truncated and fsynced. The
+ *     marker records the final LSN and the actual file size, which allows the next startup to
+ *     verify the log file matches the expected state.
+ *
+ * SAFETY GUARANTEES: - Marker is only written after successful fsync of log data - Marker includes
+ *     checksum for integrity verification - Marker is cleared immediately on next open before any
+ *     other work - If marker validation fails, full recovery runs (fail-safe)
+ *
+ * FAILURE MODES NOT PROTECTED: - Disk lying about fsync completion (hardware/driver bug) - File
+ *     system corruption that produces matching file sizes - These are fundamental durability issues
+ *     that affect all databases
+ *
+ * TRADE-OFF: Without this optimization: Corruption detected at startup (eager) With this
+ *     optimization: Corruption detected on access (lazy) Both have identical durability - the
+ *     difference is detection time.
+ */
+static int
+__log_write_shutdown_marker(WT_SESSION_IMPL *session)
+{
+    WT_CONNECTION_IMPL *conn;
+    WT_DECL_ITEM(path);
+    WT_DECL_RET;
+    WTI_LOG *log;
+    wt_off_t file_size;
+    uint32_t checksum, file_num, offset;
+    char *metaconf, *marker;
+    char marker_value[256];
+    bool exist;
+
+    conn = S2C(session);
+    log = conn->log_mgr.log;
+    metaconf = NULL;
+    marker = NULL;
+
+    /* Only write the marker if recovery_skip is configured. */
+    if (!F_ISSET(&conn->log_mgr, WT_LOG_RECOVERY_SKIP))
+        return (0);
+
+    /* Don't write the marker for read-only connections. */
+    if (F_ISSET(conn, WT_CONN_READONLY))
+        return (0);
+
+    /*
+     * Get the final log file number and offset from alloc_lsn. This represents the end of valid
+     * data in the log.
+     */
+    file_num = log->alloc_lsn.l.file;
+    offset = __wt_lsn_offset(&log->alloc_lsn);
+
+    /* Construct the log filename and get its actual size. */
+    WT_RET(__wt_scr_alloc(session, 0, &path));
+    WT_ERR(__wt_log_filename(session, file_num, WT_LOG_FILENAME, path));
+
+    /* Verify the log file exists and get its size. */
+    WT_ERR(__wt_fs_exist(session, path->data, &exist));
+    if (!exist) {
+        __wt_verbose(session, WT_VERB_LOG,
+          "recovery_skip: log file %s does not exist, skipping marker write", (char *)path->data);
+        goto err;
+    }
+    WT_ERR(__wt_fs_size(session, path->data, &file_size));
+
+    /*
+     * Calculate a checksum over the marker data for integrity verification. This allows detection
+     * of turtle file corruption.
+     */
+    WT_ERR(__wt_snprintf(marker_value, sizeof(marker_value),
+      "file=%" PRIu32 ",offset=%" PRIu32 ",file_size=%" PRId64, file_num, offset,
+      (int64_t)file_size));
+    checksum = __wt_checksum(marker_value, strlen(marker_value));
+
+    /* Append checksum to the marker value. */
+    WT_ERR(__wt_snprintf(marker_value, sizeof(marker_value),
+      "file=%" PRIu32 ",offset=%" PRIu32 ",file_size=%" PRId64 ",checksum=%" PRIu32, file_num,
+      offset, (int64_t)file_size, checksum));
+
+    __wt_verbose(session, WT_VERB_LOG, "recovery_skip: writing shutdown marker: %s", marker_value);
+
+    /* Store the marker in the log manager - it will be written by __wt_turtle_update(). */
+    WT_ERR(__wt_strdup(session, marker_value, &marker));
+    conn->log_mgr.shutdown_marker = marker;
+    marker = NULL;
+
+    /*
+     * Update the turtle file. This will include the shutdown marker since we just set it. We need
+     * the current metadata configuration to rewrite the turtle file.
+     */
+    WT_ERR(__wt_metadata_search(session, WT_METAFILE_URI, &metaconf));
+    WT_WITH_TURTLE_LOCK(session, ret = __wt_turtle_update(session, WT_METAFILE_URI, metaconf));
+    WT_ERR(ret);
+
+err:
+    __wt_free(session, metaconf);
+    __wt_free(session, marker);
+    __wt_scr_free(session, &path);
+    return (ret);
+}
+
+/*
  * __wt_logmgr_destroy --
  *     Destroy the log removal server thread and logging subsystem.
  */
@@ -1217,6 +1323,14 @@ __wt_logmgr_destroy(WT_SESSION_IMPL *session)
     WT_TRET(__wti_log_slot_destroy(session));
     WT_TRET(__wti_log_close(session));
 
+    /*
+     * Write the clean shutdown marker to the turtle file. This must happen after __wti_log_close
+     * which truncates and fsyncs the log file, but before we free the log structure since we need
+     * alloc_lsn.
+     */
+    if (ret == 0)
+        WT_TRET(__log_write_shutdown_marker(session));
+
     /* Close the server thread's session. */
     if (log_mgr->server.session != NULL) {
         WT_TRET(__wt_session_close_internal(log_mgr->server.session));
@@ -1237,6 +1351,7 @@ __wt_logmgr_destroy(WT_SESSION_IMPL *session)
     __wt_spin_destroy(session, &log_mgr->log->log_sync_lock);
     __wt_spin_destroy(session, &log_mgr->log->log_writelsn_lock);
     __wt_free(session, log_mgr->log_path);
+    __wt_free(session, log_mgr->shutdown_marker);
     __wt_free(session, log_mgr->log);
     return (ret);
 }

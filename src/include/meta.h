@@ -79,6 +79,7 @@
 
 #define WT_METADATA_COMPAT "Compatibility version"
 #define WT_METADATA_LIVE_RESTORE "Live Restore"
+#define WT_METADATA_LOG_SHUTDOWN "Log shutdown"  /* Clean shutdown marker for recovery_skip */
 #define WT_METADATA_VERSION "WiredTiger version" /* Version keys */
 #define WT_METADATA_VERSION_STR "WiredTiger version string"
 

@@ -161,20 +161,23 @@ struct __wt_log_manager {
     WT_LOG_THREAD server; /* Private : server thread */
     WT_LOG_THREAD wrlsn;  /* Private : write lsn thread */
 
+    char *shutdown_marker; /* Private : Clean shutdown marker for turtle file */
+
 /* AUTOMATIC FLAG VALUE GENERATION START 0 */
-#define WT_LOG_CONFIG_ENABLED 0x001u  /* Logging is configured */
-#define WT_LOG_DOWNGRADED 0x002u      /* Running older version */
-#define WT_LOG_ENABLED 0x004u         /* Logging is enabled */
-#define WT_LOG_EXISTED 0x008u         /* Log files found */
-#define WT_LOG_FORCE_DOWNGRADE 0x010u /* Force downgrade */
-#define WT_LOG_INCR_BACKUP 0x020u     /* Incremental backup log required */
-#define WT_LOG_RECOVER_DIRTY 0x040u   /* Recovering unclean */
-#define WT_LOG_RECOVER_DONE 0x080u    /* Recovery completed */
-#define WT_LOG_RECOVER_ERR 0x100u     /* Error if recovery required */
-#define WT_LOG_RECOVER_FAILED 0x200u  /* Recovery failed */
-#define WT_LOG_REMOVE 0x400u          /* Removal is enabled */
-#define WT_LOG_ZERO_FILL 0x800u       /* Manually zero files */
-                                      /* AUTOMATIC FLAG VALUE GENERATION STOP 32 */
+#define WT_LOG_CONFIG_ENABLED 0x0001u  /* Logging is configured */
+#define WT_LOG_DOWNGRADED 0x0002u      /* Running older version */
+#define WT_LOG_ENABLED 0x0004u         /* Logging is enabled */
+#define WT_LOG_EXISTED 0x0008u         /* Log files found */
+#define WT_LOG_FORCE_DOWNGRADE 0x0010u /* Force downgrade */
+#define WT_LOG_INCR_BACKUP 0x0020u     /* Incremental backup log required */
+#define WT_LOG_RECOVERY_SKIP 0x0040u   /* Skip recovery on clean shutdown */
+#define WT_LOG_RECOVER_DIRTY 0x0080u   /* Recovering unclean */
+#define WT_LOG_RECOVER_DONE 0x0100u    /* Recovery completed */
+#define WT_LOG_RECOVER_ERR 0x0200u     /* Error if recovery required */
+#define WT_LOG_RECOVER_FAILED 0x0400u  /* Recovery failed */
+#define WT_LOG_REMOVE 0x0800u          /* Removal is enabled */
+#define WT_LOG_ZERO_FILL 0x1000u       /* Manually zero files */
+                                       /* AUTOMATIC FLAG VALUE GENERATION STOP 32 */
 
     uint32_t flags; /* Global logging configuration */
 };

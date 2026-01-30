@@ -1144,7 +1144,15 @@ wiredtiger_open_log_configuration = [
         Config('recover', 'on', r'''
             run recovery or fail with an error if recovery needs to run after an unclean
             shutdown''',
-            choices=['error', 'on'])
+            choices=['error', 'on']),
+        Config('recovery_skip', 'false', r'''
+            if enabled, skip log scanning on startup after a verified clean shutdown.
+            The shutdown state is recorded in the turtle file and validated against
+            actual log file sizes. If validation fails, full recovery runs.
+            WARNING: This trades eager verification for startup speed. Corruption
+            that would be detected during log scan is instead detected on access.
+            This option is only effective when logging is enabled''',
+            type='boolean')
     ]),
 ]
 

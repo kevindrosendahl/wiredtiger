@@ -204,6 +204,7 @@ func_ok()
         -e '/int uri2name$/d' \
         -e '/int usage$/d' \
         -e '/int util_err$/d' \
+        -e '/int verify_data$/d' \
         -e '/int wiredtiger_calc_modify/d' \
         -e '/int wiredtiger_extension_init$/d' \
         -e '/int wiredtiger_extension_terminate$/d' \

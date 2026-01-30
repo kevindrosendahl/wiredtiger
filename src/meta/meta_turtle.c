@@ -675,11 +675,13 @@ err:
 
     /*
      * A file error or a missing key/value pair in the turtle file means something has gone horribly
-     * wrong, except for the compatibility setting or live restore metadata which are optional.
-     * Failure to read the turtle file when salvaging means it can't be used for salvage.
+     * wrong, except for the compatibility setting, live restore metadata, or log shutdown marker
+     * which are optional. Failure to read the turtle file when salvaging means it can't be used for
+     * salvage.
      */
     if (ret == 0 || strcmp(key, WT_METADATA_COMPAT) == 0 ||
-      strcmp(key, WT_METADATA_LIVE_RESTORE) == 0 || F_ISSET(S2C(session), WT_CONN_SALVAGE))
+      strcmp(key, WT_METADATA_LIVE_RESTORE) == 0 || strcmp(key, WT_METADATA_LOG_SHUTDOWN) == 0 ||
+      F_ISSET(S2C(session), WT_CONN_SALVAGE))
         return (ret);
     F_SET_ATOMIC_32(S2C(session), WT_CONN_DATA_CORRUPTION);
     WT_RET_PANIC(session, WT_TRY_SALVAGE, "%s: fatal turtle file read error %d at %s",
@@ -732,6 +734,14 @@ __wt_turtle_update(WT_SESSION_IMPL *session, const char *key, const char *value)
           "state=%s\n",
           WT_METADATA_LIVE_RESTORE, (char *)state_str->data));
     }
+
+    /*
+     * If a clean shutdown marker is set, write it to the turtle file. This enables the
+     * recovery_skip optimization on next startup.
+     */
+    if (conn->log_mgr.shutdown_marker != NULL)
+        WT_ERR(__wt_fprintf(
+          session, fs, "%s\n%s\n", WT_METADATA_LOG_SHUTDOWN, conn->log_mgr.shutdown_marker));
 
     version = wiredtiger_version(&vmajor, &vminor, &vpatch);
     WT_ERR(__wt_fprintf(session, fs,

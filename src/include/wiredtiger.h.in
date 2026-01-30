@@ -3411,10 +3411,16 @@ struct __wt_connection {
  * @config{&nbsp;&nbsp;&nbsp;&nbsp;recover, run recovery or fail with an error if recovery needs to
  * run after an unclean shutdown., a string\, chosen from the following options: \c "error"\, \c
  * "on"; default \c on.}
- * @config{&nbsp;&nbsp;&nbsp;&nbsp;remove, automatically remove unneeded log
- * files., a boolean flag; default \c true.}
- * @config{&nbsp;&nbsp;&nbsp;&nbsp;zero_fill, manually
- * write zeroes into log files., a boolean flag; default \c false.}
+ * @config{&nbsp;&nbsp;&nbsp;&nbsp;recovery_skip, if enabled\, skip log
+ * scanning on startup after a verified clean shutdown.  The shutdown state is recorded in the
+ * turtle file and validated against actual log file sizes.  If validation fails\, full recovery
+ * runs.  WARNING: This trades eager verification for startup speed.  Corruption that would be
+ * detected during log scan is instead detected on access.  This option is only effective when
+ * logging is enabled., a boolean flag; default \c false.}
+ * @config{&nbsp;&nbsp;&nbsp;&nbsp;remove,
+ * automatically remove unneeded log files., a boolean flag; default \c true.}
+ * @config{&nbsp;&nbsp;&nbsp;&nbsp;zero_fill, manually write zeroes into log files., a boolean flag;
+ * default \c false.}
  * @config{ ),,}
  * @config{mmap, Use memory mapping when accessing files in a read-only mode., a boolean flag;
  * default \c true.}

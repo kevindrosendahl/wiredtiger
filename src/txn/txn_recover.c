@@ -13,6 +13,144 @@
     WT_DECL_VERBOSE_MULTI_CATEGORY( \
       ((WT_VERBOSE_CATEGORY[]){WT_VERB_RECOVERY, WT_VERB_RECOVERY_PROGRESS}))
 
+/*
+ * __recovery_check_clean_shutdown --
+ *     Check if we can skip recovery based on clean shutdown marker in turtle file.
+ *
+ * SAFETY GUARANTEES: - The marker is validated against actual log file size - The marker's checksum
+ *     is verified for integrity - If any validation fails, we return false and normal recovery runs
+ *     - The marker is cleared immediately after reading by updating the turtle file, so any crash
+ *     during startup will result in full recovery next time
+ *
+ * DURABILITY MODEL: This optimization trades eager verification for startup speed. With the marker:
+ *     - Corruption that would be detected during log scan is instead detected on access - Both
+ *     approaches have identical durability - the difference is detection time
+ *
+ * Returns: true if we can skip recovery (clean shutdown verified) false if we need to run full
+ *     recovery
+ */
+static int
+__recovery_check_clean_shutdown(WT_SESSION_IMPL *session, bool *skip_recoveryp)
+{
+    WT_CONNECTION_IMPL *conn;
+    WT_DECL_ITEM(path);
+    WT_DECL_RET;
+    wt_off_t actual_size;
+    int64_t file_size;
+    uint32_t checksum, computed_checksum, file_num, offset;
+    int parsed;
+    char checksum_input[256];
+    char *marker_value, *metaconf;
+    bool exist, marker_valid;
+
+    *skip_recoveryp = false;
+    conn = S2C(session);
+    marker_value = NULL;
+    metaconf = NULL;
+    marker_valid = false;
+
+    /* Only check if recovery_skip is configured. */
+    if (!F_ISSET(&conn->log_mgr, WT_LOG_RECOVERY_SKIP))
+        return (0);
+
+    __wt_verbose(
+      session, WT_VERB_RECOVERY, "%s", "recovery_skip: checking for clean shutdown marker");
+
+    /* Try to read the shutdown marker from the turtle file. */
+    WT_WITH_TURTLE_LOCK(
+      session, ret = __wt_turtle_read(session, WT_METADATA_LOG_SHUTDOWN, &marker_value));
+
+    /* If the marker doesn't exist, run normal recovery. */
+    if (ret == WT_NOTFOUND) {
+        __wt_verbose(session, WT_VERB_RECOVERY, "%s",
+          "recovery_skip: no shutdown marker found in turtle file, running full recovery");
+        return (0);
+    }
+    WT_RET(ret);
+
+    __wt_verbose(
+      session, WT_VERB_RECOVERY, "recovery_skip: found shutdown marker: %s", marker_value);
+
+    /*
+     * Parse the marker value using sscanf. Format: file=<N>,offset=<O>,file_size=<S>,checksum=<C>
+     */
+    parsed = sscanf(marker_value,
+      "file=%" SCNu32 ",offset=%" SCNu32 ",file_size=%" SCNd64 ",checksum=%" SCNu32, &file_num,
+      &offset, &file_size, &checksum);
+
+    if (parsed != 4) {
+        __wt_verbose(session, WT_VERB_RECOVERY,
+          "recovery_skip: failed to parse marker (got %d fields), running full recovery", parsed);
+        goto err;
+    }
+
+    /* Verify the checksum of the marker data. */
+    WT_ERR(__wt_snprintf(checksum_input, sizeof(checksum_input),
+      "file=%" PRIu32 ",offset=%" PRIu32 ",file_size=%" PRId64, file_num, offset, file_size));
+    computed_checksum = __wt_checksum(checksum_input, strlen(checksum_input));
+
+    if (computed_checksum != checksum) {
+        __wt_verbose(session, WT_VERB_RECOVERY,
+          "recovery_skip: checksum mismatch (expected %" PRIu32 ", got %" PRIu32
+          "), running full recovery",
+          checksum, computed_checksum);
+        goto err;
+    }
+
+    /* Get the actual log file size and verify it matches. */
+    WT_ERR(__wt_scr_alloc(session, 0, &path));
+    WT_ERR(__wt_log_filename(session, file_num, WT_LOG_FILENAME, path));
+
+    WT_ERR(__wt_fs_exist(session, path->data, &exist));
+    if (!exist) {
+        __wt_verbose(session, WT_VERB_RECOVERY,
+          "recovery_skip: log file %s does not exist, running full recovery", (char *)path->data);
+        goto err;
+    }
+
+    WT_ERR(__wt_fs_size(session, path->data, &actual_size));
+
+    if (actual_size != file_size) {
+        __wt_verbose(session, WT_VERB_RECOVERY,
+          "recovery_skip: file size mismatch (expected %" PRId64 ", actual %" PRId64
+          "), running full recovery",
+          file_size, (int64_t)actual_size);
+        goto err;
+    }
+
+    /*
+     * All validations passed! We can skip recovery.
+     */
+    marker_valid = true;
+    __wt_verbose(session, WT_VERB_RECOVERY,
+      "recovery_skip: clean shutdown verified (file=%" PRIu32 ", offset=%" PRIu32 ", size=%" PRId64
+      "), skipping log scan",
+      file_num, offset, file_size);
+
+err:
+    __wt_scr_free(session, &path);
+    __wt_free(session, marker_value);
+
+    /*
+     * Clear the shutdown marker by setting it to NULL and rewriting the turtle file. This ensures
+     * that any crash during startup will result in full recovery on the next attempt. A new marker
+     * will be written on clean shutdown.
+     */
+    __wt_free(session, conn->log_mgr.shutdown_marker);
+    conn->log_mgr.shutdown_marker = NULL;
+
+    WT_TRET(__wt_metadata_search(session, WT_METAFILE_URI, &metaconf));
+    if (ret == 0) {
+        WT_WITH_TURTLE_LOCK(session, ret = __wt_turtle_update(session, WT_METAFILE_URI, metaconf));
+    }
+    __wt_free(session, metaconf);
+
+    if (ret == 0 && marker_valid)
+        *skip_recoveryp = true;
+
+    return (ret);
+}
+
 /* State maintained during recovery. */
 typedef struct {
     const char *uri; /* File URI. */
@@ -1015,7 +1153,8 @@ __wt_txn_recover(WT_SESSION_IMPL *session, const char *cfg[], bool disagg)
     char *config;
     char conn_rts_cfg[16];
     char ts_string[2][WT_TS_INT_STRING_SIZE];
-    bool do_checkpoint, eviction_started, hs_exists_local, needs_rec, rts_executed, was_backup;
+    bool do_checkpoint, eviction_started, hs_exists_local, needs_rec, rts_executed, skip_recovery;
+    bool was_backup;
 
     conn = S2C(session);
     F_SET(conn, WT_CONN_RECOVERING);
@@ -1026,6 +1165,7 @@ __wt_txn_recover(WT_SESSION_IMPL *session, const char *cfg[], bool disagg)
     do_checkpoint = hs_exists_local = true;
     rts_executed = false;
     eviction_started = false;
+    skip_recovery = false;
     was_backup = F_ISSET(conn, WT_CONN_WAS_BACKUP);
 
     __wt_verbose_level_multi(
@@ -1074,6 +1214,36 @@ __wt_txn_recover(WT_SESSION_IMPL *session, const char *cfg[], bool disagg)
             do_checkpoint = false;
         WT_ERR(__hs_exists_local(session, metac, cfg, &hs_exists_local));
         goto done;
+    }
+
+    /*
+     * Check if we can skip recovery based on a clean shutdown marker. This optimization is enabled
+     * with the log.recovery_skip configuration option.
+     *
+     * The marker records the final log state at clean shutdown and is validated against the actual
+     * log file size. If valid, we can skip the expensive log scanning passes. The marker is
+     * immediately invalidated after reading, so any crash during startup will result in full
+     * recovery on the next attempt.
+     */
+    if (!was_backup) {
+        WT_ERR(__recovery_check_clean_shutdown(session, &skip_recovery));
+        if (skip_recovery) {
+            /*
+             * Clean shutdown verified. We still need to scan the metadata to set up file IDs and
+             * check for history store, but can skip log scanning.
+             *
+             * Since this was a clean shutdown, the database is already in a consistent checkpointed
+             * state - no recovery checkpoint is needed.
+             */
+            WT_ERR(__recovery_file_scan(&r));
+            metafile = &r.files[WT_METAFILE_ID];
+            WT_ERR(__hs_exists_local(session, metac, cfg, &hs_exists_local));
+            do_checkpoint = false;
+
+            __wt_verbose_level_multi(session, WT_VERB_RECOVERY_ALL, WT_VERBOSE_INFO, "%s",
+              "recovery_skip: skipping log scan due to verified clean shutdown");
+            goto done;
+        }
     }
 
     /*
@@ -1266,9 +1436,12 @@ done:
      * 3. We are not using disaggregated storage or precise checkpoint(In precise checkpoints,
      * everything is stable except prepared txn. Disagg also uses precise checkpoint, so neither
      * requires rollback to stable).
+     * 4. We did not skip recovery due to a verified clean shutdown. After a clean shutdown, all
+     *    transactions were properly committed or rolled back, so there's no unstable data to
+     *    roll back.
      */
     if (hs_exists_local && !F_ISSET(conn, WT_CONN_READONLY | WT_CONN_PRECISE_CHECKPOINT) &&
-      !disagg) {
+      !disagg && !skip_recovery) {
         const char *rts_cfg[] = {
           WT_CONFIG_BASE(session, WT_CONNECTION_rollback_to_stable), NULL, NULL};
         __wt_timer_start(session, &rts_timer);
