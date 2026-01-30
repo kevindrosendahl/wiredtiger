@@ -1198,10 +1198,10 @@ __log_write_shutdown_marker(WT_SESSION_IMPL *session)
     WT_DECL_RET;
     WTI_LOG *log;
     wt_off_t file_size;
-    uint32_t checksum, file_num, offset;
+    uint32_t checksum, file_num, max_fileid, offset;
     char *metaconf, *marker;
-    char marker_value[256];
-    bool exist;
+    char marker_value[512];
+    bool exist, hs_exists;
 
     conn = S2C(session);
     log = conn->log_mgr.log;
@@ -1237,18 +1237,33 @@ __log_write_shutdown_marker(WT_SESSION_IMPL *session)
     WT_ERR(__wt_fs_size(session, path->data, &file_size));
 
     /*
+     * Capture the maximum file ID so we can restore it on startup without scanning metadata. This
+     * is the next file ID that would be assigned, so it represents (largest existing file ID + 1).
+     */
+    max_fileid = conn->next_file_id;
+
+    /*
+     * Check if the history store file exists on disk. This is included in the checksum for
+     * integrity validation. Note: actual HS presence is still verified via __hs_exists_local on
+     * startup for consistency and to handle edge cases like salvage.
+     */
+    WT_ERR(__wt_fs_exist(session, WT_HS_FILE, &hs_exists));
+
+    /*
      * Calculate a checksum over the marker data for integrity verification. This allows detection
-     * of turtle file corruption.
+     * of turtle file corruption. The checksum covers all data fields.
      */
     WT_ERR(__wt_snprintf(marker_value, sizeof(marker_value),
-      "file=%" PRIu32 ",offset=%" PRIu32 ",file_size=%" PRId64, file_num, offset,
-      (int64_t)file_size));
+      "file=%" PRIu32 ",offset=%" PRIu32 ",file_size=%" PRId64 ",max_fileid=%" PRIu32
+      ",hs_exists=%d",
+      file_num, offset, (int64_t)file_size, max_fileid, hs_exists ? 1 : 0));
     checksum = __wt_checksum(marker_value, strlen(marker_value));
 
     /* Append checksum to the marker value. */
     WT_ERR(__wt_snprintf(marker_value, sizeof(marker_value),
-      "file=%" PRIu32 ",offset=%" PRIu32 ",file_size=%" PRId64 ",checksum=%" PRIu32, file_num,
-      offset, (int64_t)file_size, checksum));
+      "file=%" PRIu32 ",offset=%" PRIu32 ",file_size=%" PRId64 ",max_fileid=%" PRIu32
+      ",hs_exists=%d,checksum=%" PRIu32,
+      file_num, offset, (int64_t)file_size, max_fileid, hs_exists ? 1 : 0, checksum));
 
     __wt_verbose(session, WT_VERB_LOG, "recovery_skip: writing shutdown marker: %s", marker_value);
 

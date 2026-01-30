@@ -26,28 +26,40 @@
  *     - Corruption that would be detected during log scan is instead detected on access - Both
  *     approaches have identical durability - the difference is detection time
  *
+ * EXTENDED MARKER: The marker includes max_fileid and hs_exists to skip file ID scanning:
+ *     max_fileid: The next file ID to assign (allows skipping metadata scan for file IDs)
+ *     hs_exists: Recorded for checksum validation; actual HS presence is verified via
+ *                __hs_exists_local for consistency and to handle edge cases like salvage
+ *     If these fields are missing (old format), skip_metadata_scanp is set to false
+ *
  * Returns: true if we can skip recovery (clean shutdown verified) false if we need to run full
- *     recovery
+ *     recovery. Additionally returns cached max_fileid if the extended marker format is valid.
  */
 static int
-__recovery_check_clean_shutdown(WT_SESSION_IMPL *session, bool *skip_recoveryp)
+__recovery_check_clean_shutdown(
+  WT_SESSION_IMPL *session, bool *skip_recoveryp, bool *skip_metadata_scanp, uint32_t *max_fileidp)
 {
     WT_CONNECTION_IMPL *conn;
     WT_DECL_ITEM(path);
     WT_DECL_RET;
     wt_off_t actual_size;
     int64_t file_size;
-    uint32_t checksum, computed_checksum, file_num, offset;
-    int parsed;
-    char checksum_input[256];
+    uint32_t checksum, computed_checksum, file_num, max_fileid, offset;
+    int hs_exists_int, parsed;
+    char checksum_input[512];
     char *marker_value, *metaconf;
-    bool exist, marker_valid;
+    bool exist, marker_valid, has_extended_fields;
 
     *skip_recoveryp = false;
+    *skip_metadata_scanp = false;
+    *max_fileidp = 0;
     conn = S2C(session);
     marker_value = NULL;
     metaconf = NULL;
     marker_valid = false;
+    has_extended_fields = false;
+    max_fileid = 0;
+    hs_exists_int = 0;
 
     /* Only check if recovery_skip is configured. */
     if (!F_ISSET(&conn->log_mgr, WT_LOG_RECOVERY_SKIP))
@@ -72,21 +84,45 @@ __recovery_check_clean_shutdown(WT_SESSION_IMPL *session, bool *skip_recoveryp)
       session, WT_VERB_RECOVERY, "recovery_skip: found shutdown marker: %s", marker_value);
 
     /*
-     * Parse the marker value using sscanf. Format: file=<N>,offset=<O>,file_size=<S>,checksum=<C>
+     * Try to parse the extended marker format first (6 fields):
+     * file=<N>,offset=<O>,file_size=<S>,max_fileid=<M>,hs_exists=<H>,checksum=<C>
      */
     parsed = sscanf(marker_value,
-      "file=%" SCNu32 ",offset=%" SCNu32 ",file_size=%" SCNd64 ",checksum=%" SCNu32, &file_num,
-      &offset, &file_size, &checksum);
+      "file=%" SCNu32 ",offset=%" SCNu32 ",file_size=%" SCNd64 ",max_fileid=%" SCNu32
+      ",hs_exists=%d,checksum=%" SCNu32,
+      &file_num, &offset, &file_size, &max_fileid, &hs_exists_int, &checksum);
 
-    if (parsed != 4) {
-        __wt_verbose(session, WT_VERB_RECOVERY,
-          "recovery_skip: failed to parse marker (got %d fields), running full recovery", parsed);
-        goto err;
+    if (parsed == 6) {
+        has_extended_fields = true;
+        /* Verify the checksum of the extended marker data. */
+        WT_ERR(__wt_snprintf(checksum_input, sizeof(checksum_input),
+          "file=%" PRIu32 ",offset=%" PRIu32 ",file_size=%" PRId64 ",max_fileid=%" PRIu32
+          ",hs_exists=%d",
+          file_num, offset, file_size, max_fileid, hs_exists_int));
+    } else {
+        /*
+         * Fall back to old marker format (4 fields) for backward compatibility:
+         * file=<N>,offset=<O>,file_size=<S>,checksum=<C>
+         */
+        parsed = sscanf(marker_value,
+          "file=%" SCNu32 ",offset=%" SCNu32 ",file_size=%" SCNd64 ",checksum=%" SCNu32, &file_num,
+          &offset, &file_size, &checksum);
+
+        if (parsed != 4) {
+            __wt_verbose(session, WT_VERB_RECOVERY,
+              "recovery_skip: failed to parse marker (got %d fields), running full recovery",
+              parsed);
+            goto err;
+        }
+
+        __wt_verbose(session, WT_VERB_RECOVERY, "%s",
+          "recovery_skip: old marker format detected, will scan metadata for file IDs");
+
+        /* Verify the checksum of the old marker data. */
+        WT_ERR(__wt_snprintf(checksum_input, sizeof(checksum_input),
+          "file=%" PRIu32 ",offset=%" PRIu32 ",file_size=%" PRId64, file_num, offset, file_size));
     }
 
-    /* Verify the checksum of the marker data. */
-    WT_ERR(__wt_snprintf(checksum_input, sizeof(checksum_input),
-      "file=%" PRIu32 ",offset=%" PRIu32 ",file_size=%" PRId64, file_num, offset, file_size));
     computed_checksum = __wt_checksum(checksum_input, strlen(checksum_input));
 
     if (computed_checksum != checksum) {
@@ -122,10 +158,19 @@ __recovery_check_clean_shutdown(WT_SESSION_IMPL *session, bool *skip_recoveryp)
      * All validations passed! We can skip recovery.
      */
     marker_valid = true;
-    __wt_verbose(session, WT_VERB_RECOVERY,
-      "recovery_skip: clean shutdown verified (file=%" PRIu32 ", offset=%" PRIu32 ", size=%" PRId64
-      "), skipping log scan",
-      file_num, offset, file_size);
+
+    if (has_extended_fields) {
+        __wt_verbose(session, WT_VERB_RECOVERY,
+          "recovery_skip: clean shutdown verified (file=%" PRIu32 ", offset=%" PRIu32
+          ", size=%" PRId64 ", max_fileid=%" PRIu32
+          ", hs_exists=%d), skipping log and metadata scan",
+          file_num, offset, file_size, max_fileid, hs_exists_int);
+    } else {
+        __wt_verbose(session, WT_VERB_RECOVERY,
+          "recovery_skip: clean shutdown verified (file=%" PRIu32 ", offset=%" PRIu32
+          ", size=%" PRId64 "), skipping log scan",
+          file_num, offset, file_size);
+    }
 
 err:
     __wt_scr_free(session, &path);
@@ -145,8 +190,13 @@ err:
     }
     __wt_free(session, metaconf);
 
-    if (ret == 0 && marker_valid)
+    if (ret == 0 && marker_valid) {
         *skip_recoveryp = true;
+        if (has_extended_fields) {
+            *skip_metadata_scanp = true;
+            *max_fileidp = max_fileid;
+        }
+    }
 
     return (ret);
 }
@@ -1149,12 +1199,13 @@ __wt_txn_recover(WT_SESSION_IMPL *session, const char *cfg[], bool disagg)
     WT_RECOVERY_FILE *metafile;
     WT_TIMER checkpoint_timer, rts_timer, timer;
     wt_off_t hs_size;
+    uint32_t cached_max_fileid;
     char ckpt_lsn_str[WT_MAX_LSN_STRING], max_rec_lsn_str[WT_MAX_LSN_STRING];
     char *config;
     char conn_rts_cfg[16];
     char ts_string[2][WT_TS_INT_STRING_SIZE];
-    bool do_checkpoint, eviction_started, hs_exists_local, needs_rec, rts_executed, skip_recovery;
-    bool was_backup;
+    bool do_checkpoint, eviction_started, hs_exists_local, needs_rec;
+    bool rts_executed, skip_metadata_scan, skip_recovery, was_backup;
 
     conn = S2C(session);
     F_SET(conn, WT_CONN_RECOVERING);
@@ -1166,6 +1217,8 @@ __wt_txn_recover(WT_SESSION_IMPL *session, const char *cfg[], bool disagg)
     rts_executed = false;
     eviction_started = false;
     skip_recovery = false;
+    skip_metadata_scan = false;
+    cached_max_fileid = 0;
     was_backup = F_ISSET(conn, WT_CONN_WAS_BACKUP);
 
     __wt_verbose_level_multi(
@@ -1224,24 +1277,67 @@ __wt_txn_recover(WT_SESSION_IMPL *session, const char *cfg[], bool disagg)
      * log file size. If valid, we can skip the expensive log scanning passes. The marker is
      * immediately invalidated after reading, so any crash during startup will result in full
      * recovery on the next attempt.
+     *
+     * The extended marker format also includes max_fileid and hs_exists, which allows skipping the
+     * metadata scan as well.
      */
     if (!was_backup) {
-        WT_ERR(__recovery_check_clean_shutdown(session, &skip_recovery));
+        WT_ERR(__recovery_check_clean_shutdown(
+          session, &skip_recovery, &skip_metadata_scan, &cached_max_fileid));
         if (skip_recovery) {
             /*
-             * Clean shutdown verified. We still need to scan the metadata to set up file IDs and
-             * check for history store, but can skip log scanning.
-             *
-             * Since this was a clean shutdown, the database is already in a consistent checkpointed
-             * state - no recovery checkpoint is needed.
+             * Clean shutdown verified. Since this was a clean shutdown, the database is already in
+             * a consistent checkpointed state - no recovery checkpoint is needed.
              */
-            WT_ERR(__recovery_file_scan(&r));
-            metafile = &r.files[WT_METAFILE_ID];
-            WT_ERR(__hs_exists_local(session, metac, cfg, &hs_exists_local));
             do_checkpoint = false;
 
-            __wt_verbose_level_multi(session, WT_VERB_RECOVERY_ALL, WT_VERBOSE_INFO, "%s",
-              "recovery_skip: skipping log scan due to verified clean shutdown");
+            if (skip_metadata_scan) {
+                /*
+                 * Extended marker format: we have cached max_fileid and hs_exists. Use these values
+                 * directly instead of scanning metadata for file IDs.
+                 */
+                conn->next_file_id = cached_max_fileid;
+
+                /*
+                 * Restore base_write_gen from the value stored at the last checkpoint. This was
+                 * read by __recovery_set_ckpt_base_write_gen into last_base_write_gen. We need to
+                 * ensure base_write_gen is at least this value for correct write generation
+                 * tracking.
+                 */
+                conn->base_write_gen =
+                  WT_MAX(conn->base_write_gen, conn->ckpt.last_base_write_gen);
+
+                /*
+                 * Even with the extended marker, scan metadata to clean up any incomplete tables.
+                 * This is a lightweight operation (only scans table: entries) and provides a safety
+                 * net for edge cases. The incomplete table cleanup does not depend on file ID
+                 * tracking.
+                 */
+                __recovery_metadata_scan_prefix(&r, "table:", NULL, __metadata_clean_incomplete_table);
+
+                /*
+                 * Check for history store existence using the standard path for consistency.
+                 * This properly verifies HS metadata and file presence, and handles edge cases
+                 * like salvage mode.
+                 */
+                WT_ERR(__hs_exists_local(session, metac, cfg, &hs_exists_local));
+
+                __wt_verbose_level_multi(session, WT_VERB_RECOVERY_ALL, WT_VERBOSE_INFO,
+                  "recovery_skip: skipping log and file ID scan, still checking for incomplete "
+                  "tables (max_fileid=%" PRIu32 ", base_write_gen=%" PRIu64 ")",
+                  cached_max_fileid, conn->base_write_gen);
+            } else {
+                /*
+                 * Old marker format: we need to scan metadata to set up file IDs and check for
+                 * history store, but can skip log scanning.
+                 */
+                WT_ERR(__recovery_file_scan(&r));
+                metafile = &r.files[WT_METAFILE_ID];
+                WT_ERR(__hs_exists_local(session, metac, cfg, &hs_exists_local));
+
+                __wt_verbose_level_multi(session, WT_VERB_RECOVERY_ALL, WT_VERBOSE_INFO, "%s",
+                  "recovery_skip: skipping log scan due to verified clean shutdown");
+            }
             goto done;
         }
     }

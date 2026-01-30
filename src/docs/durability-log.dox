@@ -89,13 +89,24 @@ When \c recovery_skip is enabled and a database is closed cleanly:
 1. A shutdown marker is written to the \c WiredTiger.turtle file containing:
    - The final log file number and offset
    - The actual log file size after truncation
+   - The maximum file ID (to avoid scanning metadata for file IDs)
+   - Whether the history store file exists
    - A checksum for integrity verification
 
 2. On the next startup:
    - If the marker exists in the turtle file, its checksum is validated
    - The recorded file size is compared against the actual log file size
    - If both checks pass, log scanning is skipped
+   - With the extended marker format, metadata scanning for file IDs is also skipped
    - The marker is removed from the turtle file immediately after validation
+
+@subsection recovery_skip_compatibility Backward Compatibility
+
+The shutdown marker format is forward and backward compatible:
+- Newer versions can read markers written by older versions (falls back to
+  scanning metadata for file IDs)
+- Older versions reading newer markers will fail checksum validation and
+  safely fall back to full recovery
 
 @subsection recovery_skip_safety Safety Guarantees
 
