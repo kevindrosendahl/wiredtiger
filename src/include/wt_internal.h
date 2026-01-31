@@ -614,8 +614,9 @@ typedef uint64_t wt_timestamp_t;
 #include "truncate.h"
 #include "txn.h"
 
-#include "session.h" /* required by connection.h */
-#include "version.h" /* required by connection.h */
+#include "session.h"     /* required by connection.h */
+#include "version.h"     /* required by connection.h */
+#include "conf_source.h" /* required by connection.h */
 #include "connection.h"
 
 #include "extern.h"

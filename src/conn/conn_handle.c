@@ -7,6 +7,7 @@
  */
 
 #include "wt_internal.h"
+#include "wiredtiger_open_conf.h"
 
 /*
  * __wti_connection_init --
@@ -147,6 +148,42 @@ __wti_connection_destroy(WT_CONNECTION_IMPL *conn)
     __wt_free(session, conn->home);
     __wt_free(session, WT_CONN_SESSIONS_GET(conn));
     __wt_stat_connection_discard(session, conn);
+
+    /* Free struct config source if present (from wiredtiger_open_ex) */
+    if (conn->conf_source != NULL) {
+        /*
+         * Free any copied string values in the args array.
+         *
+         * Note: We cast away const from args and v_str.str below. This is intentional.
+         * The public WT_OPEN_CONFIG_ARG struct uses 'const char *' for v_str.str to
+         * signal to users that they shouldn't modify the string. However, during
+         * wiredtiger_open_ex we copy user strings via __wt_strndup and store them
+         * in this const field. When freeing, we must cast away const. This is a
+         * standard C idiom for "const in API, mutable internally" and is safe
+         * because we allocated this memory ourselves.
+         */
+        if (conn->conf_source->type == WT_CONF_SOURCE_STRUCT &&
+          conn->conf_source->u.structured.args != NULL) {
+            WT_OPEN_CONFIG_ARG *args = (WT_OPEN_CONFIG_ARG *)conn->conf_source->u.structured.args;
+            size_t count = conn->conf_source->u.structured.count;
+            size_t i;
+
+            /* If count is 0, it's sentinel-terminated */
+            if (count == 0) {
+                for (i = 0; args[i].key != WT_OPEN_CONF_KEY_END; i++) {
+                    if (args[i].type == WT_OPEN_CONFIG_ARG_STR)
+                        __wt_free(session, args[i].value.v_str.str);
+                }
+            } else {
+                for (i = 0; i < count; i++) {
+                    if (args[i].type == WT_OPEN_CONFIG_ARG_STR)
+                        __wt_free(session, args[i].value.v_str.str);
+                }
+            }
+            __wt_free(session, args);
+        }
+        __wt_free(session, conn->conf_source);
+    }
 
     __wt_free(NULL, conn);
 }

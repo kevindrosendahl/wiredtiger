@@ -581,6 +581,12 @@ struct __wt_connection_impl {
 
     const char *cfg; /* Connection configuration */
 
+    /*
+     * Structured configuration source for wiredtiger_open_ex.
+     * Only valid during wiredtiger_open_ex initialization; NULL otherwise.
+     */
+    WT_CONF_SOURCE *conf_source;
+
     WT_SPINLOCK api_lock;                 /* Connection API spinlock */
     WT_SPINLOCK checkpoint_lock;          /* Checkpoint spinlock */
     WT_SPINLOCK chunkcache_metadata_lock; /* Chunk cache metadata spinlock */

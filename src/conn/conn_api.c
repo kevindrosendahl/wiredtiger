@@ -7,6 +7,72 @@
  */
 
 #include "wt_internal.h"
+#include "wiredtiger_open_conf.h"
+
+/*
+ * __conn_config_get_int --
+ *     Get an integer config value, checking struct config first if available.
+ *     This is the core bypass mechanism - if the key is in struct config,
+ *     we return directly without parsing the config string.
+ */
+static int
+__conn_config_get_int(WT_SESSION_IMPL *session, WT_CONNECTION_IMPL *conn, const char **cfg,
+  uint64_t key_id, const char *key_name, int64_t *valuep)
+{
+    WT_CONFIG_ITEM cval;
+    WT_CONF_SOURCE *conf_source;
+    const char *parent_name;
+    int ret;
+
+    conf_source = conn->conf_source;
+
+    /* If we have a struct config source, try to read from it first (bypass) */
+    if (conf_source != NULL && conf_source->type == WT_CONF_SOURCE_STRUCT) {
+        ret = __wt_open_conf_get_key_info(key_id, NULL, &parent_name, NULL);
+        if (ret == 0) {
+            ret = __wt_conf_source_get_int(
+              session, conf_source, key_id, key_name, parent_name, valuep);
+            if (ret == 0)
+                return (0); /* Found in struct config - bypass complete */
+            /* WT_NOTFOUND means key not in struct config, fall through to string */
+        }
+    }
+
+    /* Fall back to string config parsing */
+    WT_RET(__wt_config_gets(session, cfg, key_name, &cval));
+    *valuep = cval.val;
+    return (0);
+}
+
+/*
+ * __conn_config_get_string --
+ *     Get a string config value, checking struct config first if available.
+ */
+static int
+__conn_config_get_string(WT_SESSION_IMPL *session, WT_CONNECTION_IMPL *conn, const char **cfg,
+  uint64_t key_id, const char *key_name, WT_CONFIG_ITEM *cval)
+{
+    WT_CONF_SOURCE *conf_source;
+    const char *parent_name;
+    int ret;
+
+    conf_source = conn->conf_source;
+
+    /* If we have a struct config source, try to read from it first (bypass) */
+    if (conf_source != NULL && conf_source->type == WT_CONF_SOURCE_STRUCT) {
+        ret = __wt_open_conf_get_key_info(key_id, NULL, &parent_name, NULL);
+        if (ret == 0) {
+            ret =
+              __wt_conf_source_get_string(session, conf_source, key_id, key_name, parent_name, cval);
+            if (ret == 0)
+                return (0); /* Found in struct config - bypass complete */
+            /* WT_NOTFOUND means key not in struct config, fall through to string */
+        }
+    }
+
+    /* Fall back to string config parsing */
+    return __wt_config_gets(session, cfg, key_name, cval);
+}
 
 /*
  * ext_collate --
@@ -1769,22 +1835,24 @@ err:
 static int
 __conn_hash_config(WT_SESSION_IMPL *session, const char *cfg[])
 {
-    WT_CONFIG_ITEM cval;
     WT_CONNECTION_IMPL *conn;
     uint64_t i;
+    int64_t hash_buckets_val, dhandle_buckets_val;
 
     conn = S2C(session);
-    WT_RET(__wt_config_gets(session, cfg, "hash.buckets", &cval));
-    if (!__wt_ispo2((uint32_t)cval.val))
+    WT_RET(__conn_config_get_int(
+      session, conn, cfg, WT_OPEN_CONF_hash_buckets, "hash.buckets", &hash_buckets_val));
+    if (!__wt_ispo2((uint32_t)hash_buckets_val))
         WT_RET_MSG(session, EINVAL, "Hash bucket size %" PRIu64 " invalid. Must be power of 2",
-          (uint64_t)cval.val);
-    conn->hash_size = (uint64_t)cval.val;
-    WT_RET(__wt_config_gets(session, cfg, "hash.dhandle_buckets", &cval));
-    if (!__wt_ispo2((uint32_t)cval.val))
+          (uint64_t)hash_buckets_val);
+    conn->hash_size = (uint64_t)hash_buckets_val;
+    WT_RET(__conn_config_get_int(session, conn, cfg, WT_OPEN_CONF_hash_dhandle_buckets,
+      "hash.dhandle_buckets", &dhandle_buckets_val));
+    if (!__wt_ispo2((uint32_t)dhandle_buckets_val))
         WT_RET_MSG(session, EINVAL,
           "Data handle hash bucket size %" PRIu64 " invalid. Must be power of 2",
-          (uint64_t)cval.val);
-    conn->dh_hash_size = (uint64_t)cval.val;
+          (uint64_t)dhandle_buckets_val);
+    conn->dh_hash_size = (uint64_t)dhandle_buckets_val;
     /* Don't set the values in the statistics here. They're set after the connection is set up. */
 
     /* Hash bucket arrays. */
@@ -1843,8 +1911,23 @@ __conn_single(WT_SESSION_IMPL *session, const char *cfg[])
     conn = S2C(session);
     fh = NULL;
 
-    WT_RET(__wt_config_gets(session, cfg, "create", &cval));
-    is_create = cval.val != 0;
+    /* Check struct config first for create (bypass string parsing) */
+    {
+        bool found_in_struct = false;
+        is_create = false;
+        if (conn->conf_source != NULL && conn->conf_source->type == WT_CONF_SOURCE_STRUCT) {
+            int64_t create_val;
+            if (__wt_conf_source_get_int(session, conn->conf_source, WT_OPEN_CONF_create, "create",
+                  NULL, &create_val) == 0) {
+                is_create = create_val != 0;
+                found_in_struct = true;
+            }
+        }
+        if (!found_in_struct) {
+            WT_RET(__wt_config_gets(session, cfg, "create", &cval));
+            is_create = cval.val != 0;
+        }
+    }
 
     if (F_ISSET(conn, WT_CONN_READONLY))
         is_create = false;
@@ -2130,33 +2213,35 @@ __wti_extra_diagnostics_config(WT_SESSION_IMPL *session, const char *cfg[])
 static int
 __debug_mode_log_retention_config(WT_SESSION_IMPL *session, const char *cfg[])
 {
-    WT_CONFIG_ITEM cval;
     WT_CONNECTION_IMPL *conn;
     WT_DECL_RET;
+    int64_t ckpt_retention_val, log_retention_val;
 
     conn = S2C(session);
 
     __wt_writelock(session, &conn->log_mgr.debug_log_retention_lock);
 
-    WT_ERR(__wt_config_gets(session, cfg, "debug_mode.checkpoint_retention", &cval));
+    WT_ERR(__conn_config_get_int(session, conn, cfg, WT_OPEN_CONF_debug_mode_checkpoint_retention,
+      "debug_mode.checkpoint_retention", &ckpt_retention_val));
 
     /*
      * Checkpoint retention has some rules to simplify usage. You can turn it on to some value. You
      * can turn it off. You can reconfigure to the same value again. You cannot change the non-zero
      * value. Once it was on in the past and then turned off, you cannot turn it back on again.
      */
-    if (cval.val != 0) {
-        if (conn->debug_ckpt_cnt != 0 && cval.val != conn->debug_ckpt_cnt)
+    if (ckpt_retention_val != 0) {
+        if (conn->debug_ckpt_cnt != 0 && ckpt_retention_val != conn->debug_ckpt_cnt)
             WT_ERR_MSG(session, EINVAL, "Cannot change value for checkpoint retention");
-        WT_ERR(
-          __wt_realloc_def(session, &conn->debug_ckpt_alloc, (size_t)cval.val, &conn->debug_ckpt));
+        WT_ERR(__wt_realloc_def(
+          session, &conn->debug_ckpt_alloc, (size_t)ckpt_retention_val, &conn->debug_ckpt));
         FLD_SET(conn->debug_flags, WT_CONN_DEBUG_CKPT_RETAIN);
     } else
         FLD_CLR(conn->debug_flags, WT_CONN_DEBUG_CKPT_RETAIN);
-    conn->debug_ckpt_cnt = (uint32_t)cval.val;
+    conn->debug_ckpt_cnt = (uint32_t)ckpt_retention_val;
 
-    WT_ERR(__wt_config_gets(session, cfg, "debug_mode.log_retention", &cval));
-    conn->debug_log_cnt = (uint32_t)cval.val;
+    WT_ERR(__conn_config_get_int(session, conn, cfg, WT_OPEN_CONF_debug_mode_log_retention,
+      "debug_mode.log_retention", &log_retention_val));
+    conn->debug_log_cnt = (uint32_t)log_retention_val;
 
 err:
     __wt_writeunlock(session, &conn->log_mgr.debug_log_retention_lock);
@@ -2170,8 +2255,8 @@ err:
 static int
 __debug_mode_background_compact_config(WT_SESSION_IMPL *session, const char *cfg[])
 {
-    WT_CONFIG_ITEM cval;
     WT_CONNECTION_IMPL *conn;
+    int64_t bg_compact_val;
 
     conn = S2C(session);
 
@@ -2182,8 +2267,9 @@ __debug_mode_background_compact_config(WT_SESSION_IMPL *session, const char *cfg
 #define WT_BACKGROUND_COMPACT_MAX_SKIP_TIME 60 * WT_MINUTE
 #define WT_BACKGROUND_COMPACT_WAIT_TIME 10
 
-    WT_RET(__wt_config_gets(session, cfg, "debug_mode.background_compact", &cval));
-    if (cval.val) {
+    WT_RET(__conn_config_get_int(session, conn, cfg, WT_OPEN_CONF_debug_mode_background_compact,
+      "debug_mode.background_compact", &bg_compact_val));
+    if (bg_compact_val) {
         conn->background_compact.max_file_idle_time = WT_BACKGROUND_COMPACT_MAX_IDLE_TIME_DEBUG;
         conn->background_compact.max_file_skip_time = WT_BACKGROUND_COMPACT_MAX_SKIP_TIME_DEBUG;
         conn->background_compact.full_iteration_wait_time = WT_BACKGROUND_COMPACT_WAIT_TIME_DEBUG;
@@ -2203,9 +2289,9 @@ __debug_mode_background_compact_config(WT_SESSION_IMPL *session, const char *cfg
 int
 __wti_debug_mode_config(WT_SESSION_IMPL *session, const char *cfg[])
 {
-    WT_CONFIG_ITEM cval;
     WT_CONNECTION_IMPL *conn;
     WT_TXN_GLOBAL *txn_global;
+    int64_t val;
 
     conn = S2C(session);
     txn_global = &conn->txn_global;
@@ -2213,89 +2299,106 @@ __wti_debug_mode_config(WT_SESSION_IMPL *session, const char *cfg[])
     WT_RET(__debug_mode_log_retention_config(session, cfg));
     WT_RET(__debug_mode_background_compact_config(session, cfg));
 
-    WT_RET(__wt_config_gets(session, cfg, "debug_mode.configuration", &cval));
-    if (cval.val)
+    WT_RET(__conn_config_get_int(session, conn, cfg, WT_OPEN_CONF_debug_mode_configuration,
+      "debug_mode.configuration", &val));
+    if (val)
         FLD_SET(conn->debug_flags, WT_CONN_DEBUG_CONFIGURATION);
     else
         FLD_CLR(conn->debug_flags, WT_CONN_DEBUG_CONFIGURATION);
 
-    WT_RET(__wt_config_gets(session, cfg, "debug_mode.corruption_abort", &cval));
-    if (cval.val)
+    WT_RET(__conn_config_get_int(session, conn, cfg, WT_OPEN_CONF_debug_mode_corruption_abort,
+      "debug_mode.corruption_abort", &val));
+    if (val)
         FLD_SET(conn->debug_flags, WT_CONN_DEBUG_CORRUPTION_ABORT);
     else
         FLD_CLR(conn->debug_flags, WT_CONN_DEBUG_CORRUPTION_ABORT);
 
-    WT_RET(__wt_config_gets(session, cfg, "debug_mode.crash_point_colgroup", &cval));
-    if (cval.val)
+    WT_RET(__conn_config_get_int(session, conn, cfg, WT_OPEN_CONF_debug_mode_crash_point_colgroup,
+      "debug_mode.crash_point_colgroup", &val));
+    if (val)
         FLD_SET(conn->debug_flags, WT_CONN_DEBUG_CRASH_POINT_COLGROUP);
     else
         FLD_CLR(conn->debug_flags, WT_CONN_DEBUG_CRASH_POINT_COLGROUP);
 
-    WT_RET(__wt_config_gets(session, cfg, "debug_mode.cursor_copy", &cval));
-    if (cval.val)
+    WT_RET(__conn_config_get_int(session, conn, cfg, WT_OPEN_CONF_debug_mode_cursor_copy,
+      "debug_mode.cursor_copy", &val));
+    if (val)
         FLD_SET(conn->debug_flags, WT_CONN_DEBUG_CURSOR_COPY);
     else
         FLD_CLR(conn->debug_flags, WT_CONN_DEBUG_CURSOR_COPY);
 
-    WT_RET(__wt_config_gets(session, cfg, "debug_mode.cursor_reposition", &cval));
-    if (cval.val)
+    WT_RET(__conn_config_get_int(session, conn, cfg, WT_OPEN_CONF_debug_mode_cursor_reposition,
+      "debug_mode.cursor_reposition", &val));
+    if (val)
         FLD_SET(conn->debug_flags, WT_CONN_DEBUG_CURSOR_REPOSITION);
     else
         FLD_CLR(conn->debug_flags, WT_CONN_DEBUG_CURSOR_REPOSITION);
 
-    WT_RET(__wt_config_gets(session, cfg, "debug_mode.eviction", &cval));
-    if (cval.val)
+    WT_RET(__conn_config_get_int(
+      session, conn, cfg, WT_OPEN_CONF_debug_mode_eviction, "debug_mode.eviction", &val));
+    if (val)
         FLD_SET(conn->debug_flags, WT_CONN_DEBUG_EVICT_AGGRESSIVE_MODE);
     else
         FLD_CLR(conn->debug_flags, WT_CONN_DEBUG_EVICT_AGGRESSIVE_MODE);
 
-    WT_RET(__wt_config_gets(session, cfg, "debug_mode.realloc_exact", &cval));
-    if (cval.val)
+    WT_RET(__conn_config_get_int(session, conn, cfg, WT_OPEN_CONF_debug_mode_realloc_exact,
+      "debug_mode.realloc_exact", &val));
+    if (val)
         FLD_SET(conn->debug_flags, WT_CONN_DEBUG_REALLOC_EXACT);
     else
         FLD_CLR(conn->debug_flags, WT_CONN_DEBUG_REALLOC_EXACT);
 
-    WT_RET(__wt_config_gets(session, cfg, "debug_mode.realloc_malloc", &cval));
-    if (cval.val)
+    WT_RET(__conn_config_get_int(session, conn, cfg, WT_OPEN_CONF_debug_mode_realloc_malloc,
+      "debug_mode.realloc_malloc", &val));
+    if (val)
         FLD_SET(conn->debug_flags, WT_CONN_DEBUG_REALLOC_MALLOC);
     else
         FLD_CLR(conn->debug_flags, WT_CONN_DEBUG_REALLOC_MALLOC);
 
-    WT_RET(__wt_config_gets(session, cfg, "debug_mode.rollback_error", &cval));
-    txn_global->debug_rollback = (uint64_t)cval.val;
+    WT_RET(__conn_config_get_int(session, conn, cfg, WT_OPEN_CONF_debug_mode_rollback_error,
+      "debug_mode.rollback_error", &val));
+    txn_global->debug_rollback = (uint64_t)val;
 
-    WT_RET(__wt_config_gets(session, cfg, "debug_mode.slow_checkpoint", &cval));
-    if (cval.val)
+    WT_RET(__conn_config_get_int(session, conn, cfg, WT_OPEN_CONF_debug_mode_slow_checkpoint,
+      "debug_mode.slow_checkpoint", &val));
+    if (val)
         FLD_SET(conn->debug_flags, WT_CONN_DEBUG_SLOW_CKPT);
     else
         FLD_CLR(conn->debug_flags, WT_CONN_DEBUG_SLOW_CKPT);
 
-    WT_RET(__wt_config_gets(session, cfg, "debug_mode.stress_skiplist", &cval));
-    if (cval.val)
+    WT_RET(__conn_config_get_int(session, conn, cfg, WT_OPEN_CONF_debug_mode_stress_skiplist,
+      "debug_mode.stress_skiplist", &val));
+    if (val)
         FLD_SET(conn->debug_flags, WT_CONN_DEBUG_STRESS_SKIPLIST);
     else
         FLD_CLR(conn->debug_flags, WT_CONN_DEBUG_STRESS_SKIPLIST);
 
-    WT_RET(__wt_config_gets(session, cfg, "debug_mode.table_logging", &cval));
-    if (cval.val)
+    WT_RET(__conn_config_get_int(session, conn, cfg, WT_OPEN_CONF_debug_mode_table_logging,
+      "debug_mode.table_logging", &val));
+    if (val)
         FLD_SET(conn->debug_flags, WT_CONN_DEBUG_TABLE_LOGGING);
     else
         FLD_CLR(conn->debug_flags, WT_CONN_DEBUG_TABLE_LOGGING);
 
-    WT_RET(__wt_config_gets(session, cfg, "debug_mode.tiered_flush_error_continue", &cval));
-    if (cval.val)
+    WT_RET(__conn_config_get_int(
+      session, conn, cfg, WT_OPEN_CONF_debug_mode_tiered_flush_error_continue,
+      "debug_mode.tiered_flush_error_continue", &val));
+    if (val)
         FLD_SET(conn->debug_flags, WT_CONN_DEBUG_TIERED_FLUSH_ERROR_CONTINUE);
     else
         FLD_CLR(conn->debug_flags, WT_CONN_DEBUG_TIERED_FLUSH_ERROR_CONTINUE);
 
-    WT_RET(__wt_config_gets(session, cfg, "debug_mode.update_restore_evict", &cval));
-    if (cval.val)
+    WT_RET(__conn_config_get_int(session, conn, cfg, WT_OPEN_CONF_debug_mode_update_restore_evict,
+      "debug_mode.update_restore_evict", &val));
+    if (val)
         FLD_SET(conn->debug_flags, WT_CONN_DEBUG_UPDATE_RESTORE_EVICT);
     else
         FLD_CLR(conn->debug_flags, WT_CONN_DEBUG_UPDATE_RESTORE_EVICT);
 
-    WT_RET(__wt_config_gets(session, cfg, "debug_mode.eviction_checkpoint_ts_ordering", &cval));
-    if (cval.val)
+    WT_RET(__conn_config_get_int(
+      session, conn, cfg, WT_OPEN_CONF_debug_mode_eviction_checkpoint_ts_ordering,
+      "debug_mode.eviction_checkpoint_ts_ordering", &val));
+    if (val)
         FLD_SET(conn->debug_flags, WT_CONN_DEBUG_EVICTION_CKPT_TS_ORDERING);
     else
         FLD_CLR(conn->debug_flags, WT_CONN_DEBUG_EVICTION_CKPT_TS_ORDERING);
@@ -2309,21 +2412,25 @@ __wti_debug_mode_config(WT_SESSION_IMPL *session, const char *cfg[])
 int
 __wti_heuristic_controls_config(WT_SESSION_IMPL *session, const char *cfg[])
 {
-    WT_CONFIG_ITEM cval;
     WT_CONNECTION_IMPL *conn;
+    int64_t val;
 
     conn = S2C(session);
 
-    WT_RET(__wt_config_gets(
-      session, cfg, "heuristic_controls.checkpoint_cleanup_obsolete_tw_pages_dirty_max", &cval));
-    conn->heuristic_controls.checkpoint_cleanup_obsolete_tw_pages_dirty_max = (uint32_t)cval.val;
+    WT_RET(__conn_config_get_int(session, conn, cfg,
+      WT_OPEN_CONF_heuristic_controls_checkpoint_cleanup_obsolete_tw_pages_dirty_max,
+      "heuristic_controls.checkpoint_cleanup_obsolete_tw_pages_dirty_max", &val));
+    conn->heuristic_controls.checkpoint_cleanup_obsolete_tw_pages_dirty_max = (uint32_t)val;
 
-    WT_RET(__wt_config_gets(
-      session, cfg, "heuristic_controls.eviction_obsolete_tw_pages_dirty_max", &cval));
-    conn->heuristic_controls.eviction_obsolete_tw_pages_dirty_max = (uint32_t)cval.val;
+    WT_RET(__conn_config_get_int(session, conn, cfg,
+      WT_OPEN_CONF_heuristic_controls_eviction_obsolete_tw_pages_dirty_max,
+      "heuristic_controls.eviction_obsolete_tw_pages_dirty_max", &val));
+    conn->heuristic_controls.eviction_obsolete_tw_pages_dirty_max = (uint32_t)val;
 
-    WT_RET(__wt_config_gets(session, cfg, "heuristic_controls.obsolete_tw_btree_max", &cval));
-    conn->heuristic_controls.obsolete_tw_btree_max = (uint32_t)cval.val;
+    WT_RET(__conn_config_get_int(session, conn, cfg,
+      WT_OPEN_CONF_heuristic_controls_obsolete_tw_btree_max,
+      "heuristic_controls.obsolete_tw_btree_max", &val));
+    conn->heuristic_controls.obsolete_tw_btree_max = (uint32_t)val;
 
     return (0);
 }
@@ -2355,7 +2462,7 @@ __wti_json_config(WT_SESSION_IMPL *session, const char *cfg[], bool reconfig)
     WT_RET(ret);
 
     /* Check if JSON-encoded message strings are enabled, per event handler category. */
-    WT_RET(__wt_config_gets(session, cfg, "json_output", &cval));
+    WT_RET(__conn_config_get_string(session, conn, cfg, WT_OPEN_CONF_json_output, "json_output", &cval));
     flags = 0;
     for (ft = jsontypes; ft->name != NULL; ft++) {
         if ((ret = __wt_config_subgets(session, &cval, ft->name, &sval)) == 0 && sval.val != 0)
@@ -2428,7 +2535,7 @@ __wt_verbose_config(WT_SESSION_IMPL *session, const char *cfg[], bool reconfig)
         return (0);
     WT_RET(ret);
 
-    WT_RET(__wt_config_gets(session, cfg, "verbose", &cval));
+    WT_RET(__conn_config_get_string(session, conn, cfg, WT_OPEN_CONF_verbose, "verbose", &cval));
     __wt_get_verbose_categories(&verbtypes, NULL);
 
     /*
@@ -2623,7 +2730,7 @@ static int
 __conn_write_base_config(WT_SESSION_IMPL *session, const char *cfg[])
 {
     WT_CONFIG parser;
-    WT_CONFIG_ITEM cval, k, v;
+    WT_CONFIG_ITEM k, v;
     WT_DECL_RET;
     WT_FSTREAM *fs;
     const char *base_config;
@@ -2644,9 +2751,13 @@ __conn_write_base_config(WT_SESSION_IMPL *session, const char *cfg[])
      */
     if (!S2C(session)->is_new)
         return (0);
-    WT_RET(__wt_config_gets(session, cfg, "config_base", &cval));
-    if (!cval.val)
-        return (0);
+    {
+        int64_t config_base_val;
+        WT_RET(__conn_config_get_int(
+          session, S2C(session), cfg, WT_OPEN_CONF_config_base, "config_base", &config_base_val));
+        if (!config_base_val)
+            return (0);
+    }
 
     /*
      * We don't test separately if we're creating the database in this run as we might have crashed
@@ -2799,8 +2910,10 @@ err:
 static int
 __conn_session_size(WT_SESSION_IMPL *session, const char *cfg[], uint32_t *vp)
 {
-    WT_CONFIG_ITEM cval;
-    int64_t v;
+    WT_CONNECTION_IMPL *conn;
+    int64_t v, session_max_val, live_restore_threads;
+
+    conn = S2C(session);
 
 /*
  * Start with 25 internal sessions to cover threads the application can't configure (for example,
@@ -2813,15 +2926,17 @@ __conn_session_size(WT_SESSION_IMPL *session, const char *cfg[], uint32_t *vp)
     v += WT_EVICT_MAX_WORKERS;
 
     /* If live restore is enabled add its thread count. */
-    if (F_ISSET(S2C(session), WT_CONN_LIVE_RESTORE_FS)) {
-        WT_RET(__wt_config_gets(session, cfg, "live_restore.threads_max", &cval));
-        v += cval.val;
+    if (F_ISSET(conn, WT_CONN_LIVE_RESTORE_FS)) {
+        WT_RET(__conn_config_get_int(session, conn, cfg,
+          WT_OPEN_CONF_live_restore_threads_max, "live_restore.threads_max", &live_restore_threads));
+        v += live_restore_threads;
     }
 
     v += WT_RTS_MAX_WORKERS;
 
-    WT_RET(__wt_config_gets(session, cfg, "session_max", &cval));
-    v += cval.val;
+    WT_RET(__conn_config_get_int(
+      session, conn, cfg, WT_OPEN_CONF_session_max, "session_max", &session_max_val));
+    v += session_max_val;
 
     *vp = (uint32_t)v;
 
@@ -3054,12 +3169,15 @@ err:
 }
 
 /*
- * wiredtiger_open --
- *     Main library entry point: open a new connection to a WiredTiger database.
+ * __wiredtiger_open_internal --
+ *     Internal implementation of wiredtiger_open that supports both string
+ *     and struct configuration. When struct config is provided, it is stored
+ *     on the connection early and config reads check it first, bypassing
+ *     string parsing for keys present in the struct config.
  */
-int
-wiredtiger_open(const char *home, WT_EVENT_HANDLER *event_handler, const char *config,
-  WT_CONNECTION **connectionp)
+static int
+__wiredtiger_open_internal(const char *home, WT_EVENT_HANDLER *event_handler, const char *config,
+  const WT_OPEN_CONFIG_ARG *config_args, size_t config_count, WT_CONNECTION **connectionp)
 {
     static const WT_CONNECTION stdc = {__conn_close, __conn_debug_info, __conn_reconfigure,
       __conn_get_home, __conn_compile_configuration, __conn_configure_method, __conn_is_new,
@@ -3119,8 +3237,83 @@ wiredtiger_open(const char *home, WT_EVENT_HANDLER *event_handler, const char *c
     /* Basic initialization of the connection structure. */
     WT_ERR(__wti_connection_init(conn));
 
-    /* Check the application-specified configuration string. */
-    WT_ERR(__wt_config_check(session, WT_CONFIG_REF(session, wiredtiger_open), config, 0));
+    /*
+     * If struct config is provided, set it up early so that config reads
+     * can bypass string parsing. We copy the args to ensure they persist.
+     */
+    if (config_args != NULL) {
+        WT_OPEN_CONFIG_ARG *args_copy;
+        WT_CONF_SOURCE *conf_source;
+        const WT_OPEN_CONFIG_ARG *arg;
+        size_t i, n_args;
+
+        /* Sanity check config_count to prevent unbounded iteration */
+        if (config_count > 1000)
+            WT_ERR_MSG(session, EINVAL, "config_count %zu exceeds maximum of 1000", config_count);
+
+        /* Count args if sentinel-terminated */
+        if (config_count == 0) {
+            n_args = 0;
+            for (arg = config_args; arg->key != WT_OPEN_CONF_KEY_END; arg++) {
+                n_args++;
+                if (n_args > 1000)
+                    WT_ERR_MSG(session, EINVAL,
+                      "config_args array exceeds maximum of 1000 entries (missing sentinel?)");
+            }
+            n_args++; /* Include the sentinel */
+        } else {
+            n_args = config_count;
+        }
+
+        /* Allocate and copy the args */
+        WT_ERR(__wt_calloc(session, n_args, sizeof(WT_OPEN_CONFIG_ARG), &args_copy));
+        for (i = 0; i < n_args; i++) {
+            args_copy[i] = config_args[i];
+            /* Copy string values - handle both non-empty and empty strings */
+            if (config_args[i].type == WT_OPEN_CONFIG_ARG_STR &&
+              config_args[i].value.v_str.str != NULL) {
+                if (config_args[i].value.v_str.len > 0) {
+                    ret = __wt_strndup(session, config_args[i].value.v_str.str,
+                      config_args[i].value.v_str.len, (char **)&args_copy[i].value.v_str.str);
+                } else {
+                    /* Empty string: allocate a single null byte */
+                    ret = __wt_strndup(
+                      session, "", 0, (char **)&args_copy[i].value.v_str.str);
+                }
+                if (ret != 0) {
+                    /* Clean up already-copied strings before jumping to err */
+                    size_t j;
+                    for (j = 0; j < i; j++) {
+                        if (args_copy[j].type == WT_OPEN_CONFIG_ARG_STR)
+                            __wt_free(session, args_copy[j].value.v_str.str);
+                    }
+                    __wt_free(session, args_copy);
+                    args_copy = NULL;
+                    WT_ERR(ret);
+                }
+            }
+        }
+
+        /* Allocate and initialize conf_source */
+        ret = __wt_calloc_one(session, &conf_source);
+        if (ret != 0) {
+            /* Clean up args_copy since conf_source allocation failed */
+            for (i = 0; i < n_args; i++) {
+                if (args_copy[i].type == WT_OPEN_CONFIG_ARG_STR)
+                    __wt_free(session, args_copy[i].value.v_str.str);
+            }
+            __wt_free(session, args_copy);
+            WT_ERR(ret);
+        }
+        conf_source->type = WT_CONF_SOURCE_STRUCT;
+        conf_source->u.structured.args = args_copy;
+        conf_source->u.structured.count = config_count;
+        conn->conf_source = conf_source;
+    }
+
+    /* Check the application-specified configuration string (if provided). */
+    if (config != NULL)
+        WT_ERR(__wt_config_check(session, WT_CONFIG_REF(session, wiredtiger_open), config, 0));
 
     /*
      * Build the temporary, initial configuration stack, in the following
@@ -3146,16 +3339,24 @@ wiredtiger_open(const char *home, WT_EVENT_HANDLER *event_handler, const char *c
      * The environment isn't trusted by default, for security reasons; if the application wants us
      * to trust the environment before reading the filesystem, the wiredtiger_open config string is
      * the only way.
+     *
+     * Note: When struct config is provided, these reads check struct config first, bypassing
+     * string parsing if the key is found there.
      */
-    WT_ERR(__wt_config_gets(session, cfg, "in_memory", &cval));
-    if (cval.val != 0)
-        F_SET(conn, WT_CONN_IN_MEMORY);
-    WT_ERR(__wt_config_gets(session, cfg, "readonly", &cval));
-    if (cval.val)
-        F_SET(conn, WT_CONN_READONLY);
+    {
+        int64_t in_memory_val, readonly_val;
+        WT_ERR(
+          __conn_config_get_int(session, conn, cfg, WT_OPEN_CONF_in_memory, "in_memory", &in_memory_val));
+        if (in_memory_val != 0)
+            F_SET(conn, WT_CONN_IN_MEMORY);
+        WT_ERR(
+          __conn_config_get_int(session, conn, cfg, WT_OPEN_CONF_readonly, "readonly", &readonly_val));
+        if (readonly_val)
+            F_SET(conn, WT_CONN_READONLY);
+    }
 
     /* Configure error messages so we get them right early. */
-    WT_ERR(__wt_config_gets(session, cfg, "error_prefix", &cval));
+    WT_ERR(__conn_config_get_string(session, conn, cfg, WT_OPEN_CONF_error_prefix, "error_prefix", &cval));
     if (cval.len != 0)
         WT_ERR(__wt_strndup(session, cval.str, cval.len, &conn->error_prefix));
 
@@ -3192,8 +3393,12 @@ wiredtiger_open(const char *home, WT_EVENT_HANDLER *event_handler, const char *c
      * to read the base configuration file, the WIREDTIGER_CONFIG environment variable or the
      * wiredtiger_open config string are the only ways.
      */
-    WT_ERR(__wt_config_gets(session, cfg, "config_base", &cval));
-    config_base_set = cval.val != 0;
+    {
+        int64_t config_base_val;
+        WT_ERR(__conn_config_get_int(
+          session, conn, cfg, WT_OPEN_CONF_config_base, "config_base", &config_base_val));
+        config_base_set = config_base_val != 0;
+    }
 
     /*
      * Build the real configuration stack, in the following order (where
@@ -3284,8 +3489,12 @@ wiredtiger_open(const char *home, WT_EVENT_HANDLER *event_handler, const char *c
     WT_ERR(__wti_extra_diagnostics_config(session, cfg));
     WT_ERR(__wti_conn_optrack_setup(session, cfg, false));
     WT_ERR(__conn_session_size(session, cfg, &conn->session_array.size));
-    WT_ERR(__wt_config_gets(session, cfg, "session_scratch_max", &cval));
-    conn->session_scratch_max = (size_t)cval.val;
+    {
+        int64_t scratch_max;
+        WT_ERR(__conn_config_get_int(
+          session, conn, cfg, WT_OPEN_CONF_session_scratch_max, "session_scratch_max", &scratch_max));
+        conn->session_scratch_max = (size_t)scratch_max;
+    }
 
     WT_ERR(__wt_config_gets(session, cfg, "write_through", &cval));
     for (ft = file_types; ft->name != NULL; ft++) {
@@ -3297,13 +3506,18 @@ wiredtiger_open(const char *home, WT_EVENT_HANDLER *event_handler, const char *c
             WT_ERR_NOTFOUND_OK(ret, false);
     }
 
-    WT_ERR(__wt_config_gets(session, cfg, "cache_cursors", &cval));
-    if (cval.val)
-        F_SET(conn, WT_CONN_CACHE_CURSORS);
+    {
+        int64_t cache_cursors_val, checkpoint_sync_val;
+        WT_ERR(__conn_config_get_int(
+          session, conn, cfg, WT_OPEN_CONF_cache_cursors, "cache_cursors", &cache_cursors_val));
+        if (cache_cursors_val)
+            F_SET(conn, WT_CONN_CACHE_CURSORS);
 
-    WT_ERR(__wt_config_gets(session, cfg, "checkpoint_sync", &cval));
-    if (cval.val)
-        F_SET(conn, WT_CONN_CKPT_SYNC);
+        WT_ERR(__conn_config_get_int(
+          session, conn, cfg, WT_OPEN_CONF_checkpoint_sync, "checkpoint_sync", &checkpoint_sync_val));
+        if (checkpoint_sync_val)
+            F_SET(conn, WT_CONN_CKPT_SYNC);
+    }
 
     WT_ERR(__wt_config_gets(session, cfg, "file_extend", &cval));
     /*
@@ -3336,62 +3550,84 @@ wiredtiger_open(const char *home, WT_EVENT_HANDLER *event_handler, const char *c
             WT_ERR_NOTFOUND_OK(ret, false);
     }
 
-    WT_ERR(__wt_config_gets(session, cfg, "generation_drain_timeout_ms", &cval));
-    conn->gen_drain_timeout_ms = (uint64_t)cval.val;
+    {
+        int64_t gen_drain_val, mmap_val, mmap_all_val;
+        WT_ERR(__conn_config_get_int(session, conn, cfg, WT_OPEN_CONF_generation_drain_timeout_ms,
+          "generation_drain_timeout_ms", &gen_drain_val));
+        conn->gen_drain_timeout_ms = (uint64_t)gen_drain_val;
 
-    WT_ERR(__wt_config_gets(session, cfg, "mmap", &cval));
-    conn->mmap = cval.val != 0;
-    WT_ERR(__wt_config_gets(session, cfg, "mmap_all", &cval));
-    conn->mmap_all = cval.val != 0;
+        WT_ERR(__conn_config_get_int(session, conn, cfg, WT_OPEN_CONF_mmap, "mmap", &mmap_val));
+        conn->mmap = mmap_val != 0;
+        WT_ERR(
+          __conn_config_get_int(session, conn, cfg, WT_OPEN_CONF_mmap_all, "mmap_all", &mmap_all_val));
+        conn->mmap_all = mmap_all_val != 0;
+    }
 
-    WT_ERR(__wt_config_gets(session, cfg, "prefetch.available", &cval));
-    conn->prefetch_available = cval.val != 0;
-    if (F_ISSET(conn, WT_CONN_IN_MEMORY) && conn->prefetch_available)
-        WT_ERR_MSG(
-          session, EINVAL, "prefetch configuration is incompatible with in-memory configuration");
-    WT_ERR(__wt_config_gets(session, cfg, "prefetch.default", &cval));
-    conn->prefetch_auto_on = cval.val != 0;
-    if (conn->prefetch_auto_on && !conn->prefetch_available)
-        WT_ERR_MSG(session, EINVAL,
-          "pre-fetching cannot be enabled if pre-fetching is configured as unavailable");
-
-    WT_ERR(__wt_config_gets(session, cfg, "precise_checkpoint", &cval));
-    /*
-     * FIXME-WT-14721: Disaggregated storage should only support precise checkpoint but mongod is
-     * not ready for that yet. Enable precise checkpoint automatically for disaggregated storage in
-     * the future.
-     */
-    if (cval.val) {
-        if (F_ISSET(conn, WT_CONN_IN_MEMORY)) {
-            __wt_verbose_warning(session, WT_VERB_CHECKPOINT, "%s",
-              "precise checkpoint is ignored in in-memory database");
-            F_CLR(conn, WT_CONN_PRECISE_CHECKPOINT);
-        } else
-            F_SET(conn, WT_CONN_PRECISE_CHECKPOINT);
-    } else
-        F_CLR(conn, WT_CONN_PRECISE_CHECKPOINT);
-
-    WT_ERR(__wt_config_gets(session, cfg, "preserve_prepared", &cval));
-    if (cval.val) {
-        if (F_ISSET(conn, WT_CONN_IN_MEMORY)) {
-            __wt_verbose_warning(session, WT_VERB_CHECKPOINT, "%s",
-              "preserve prepared is ignored in in-memory database");
-            F_CLR(conn, WT_CONN_PRESERVE_PREPARED);
-        } else if (!F_ISSET(conn, WT_CONN_PRECISE_CHECKPOINT))
+    {
+        int64_t prefetch_avail_val, prefetch_default_val;
+        WT_ERR(__conn_config_get_int(session, conn, cfg, WT_OPEN_CONF_prefetch_available,
+          "prefetch.available", &prefetch_avail_val));
+        conn->prefetch_available = prefetch_avail_val != 0;
+        if (F_ISSET(conn, WT_CONN_IN_MEMORY) && conn->prefetch_available)
+            WT_ERR_MSG(
+              session, EINVAL, "prefetch configuration is incompatible with in-memory configuration");
+        WT_ERR(__conn_config_get_int(session, conn, cfg, WT_OPEN_CONF_prefetch_default,
+          "prefetch.default", &prefetch_default_val));
+        conn->prefetch_auto_on = prefetch_default_val != 0;
+        if (conn->prefetch_auto_on && !conn->prefetch_available)
             WT_ERR_MSG(session, EINVAL,
-              "Preserve prepared configuration incompatible with fuzzy checkpoint");
-        else
-            F_SET(conn, WT_CONN_PRESERVE_PREPARED);
-    } else
-        F_CLR(conn, WT_CONN_PRESERVE_PREPARED);
+              "pre-fetching cannot be enabled if pre-fetching is configured as unavailable");
+    }
 
-    WT_ERR(__wt_config_gets(session, cfg, "salvage", &cval));
-    if (cval.val) {
-        if (F_ISSET(conn, WT_CONN_READONLY))
-            WT_ERR_MSG(session, EINVAL, "Readonly configuration incompatible with salvage");
-        if (F_ISSET(conn, WT_CONN_LIVE_RESTORE_FS))
-            WT_ERR_MSG(session, EINVAL, "Live restore is not compatible with salvage");
-        F_SET(conn, WT_CONN_SALVAGE);
+    {
+        int64_t precise_ckpt_val;
+        WT_ERR(__conn_config_get_int(session, conn, cfg, WT_OPEN_CONF_precise_checkpoint,
+          "precise_checkpoint", &precise_ckpt_val));
+        /*
+         * FIXME-WT-14721: Disaggregated storage should only support precise checkpoint but mongod
+         * is not ready for that yet. Enable precise checkpoint automatically for disaggregated
+         * storage in the future.
+         */
+        if (precise_ckpt_val) {
+            if (F_ISSET(conn, WT_CONN_IN_MEMORY)) {
+                __wt_verbose_warning(session, WT_VERB_CHECKPOINT, "%s",
+                  "precise checkpoint is ignored in in-memory database");
+                F_CLR(conn, WT_CONN_PRECISE_CHECKPOINT);
+            } else
+                F_SET(conn, WT_CONN_PRECISE_CHECKPOINT);
+        } else
+            F_CLR(conn, WT_CONN_PRECISE_CHECKPOINT);
+    }
+
+    {
+        int64_t preserve_prep_val;
+        WT_ERR(__conn_config_get_int(session, conn, cfg, WT_OPEN_CONF_preserve_prepared,
+          "preserve_prepared", &preserve_prep_val));
+        if (preserve_prep_val) {
+            if (F_ISSET(conn, WT_CONN_IN_MEMORY)) {
+                __wt_verbose_warning(session, WT_VERB_CHECKPOINT, "%s",
+                  "preserve prepared is ignored in in-memory database");
+                F_CLR(conn, WT_CONN_PRESERVE_PREPARED);
+            } else if (!F_ISSET(conn, WT_CONN_PRECISE_CHECKPOINT))
+                WT_ERR_MSG(session, EINVAL,
+                  "Preserve prepared configuration incompatible with fuzzy checkpoint");
+            else
+                F_SET(conn, WT_CONN_PRESERVE_PREPARED);
+        } else
+            F_CLR(conn, WT_CONN_PRESERVE_PREPARED);
+    }
+
+    {
+        int64_t salvage_val;
+        WT_ERR(
+          __conn_config_get_int(session, conn, cfg, WT_OPEN_CONF_salvage, "salvage", &salvage_val));
+        if (salvage_val) {
+            if (F_ISSET(conn, WT_CONN_READONLY))
+                WT_ERR_MSG(session, EINVAL, "Readonly configuration incompatible with salvage");
+            if (F_ISSET(conn, WT_CONN_LIVE_RESTORE_FS))
+                WT_ERR_MSG(session, EINVAL, "Live restore is not compatible with salvage");
+            F_SET(conn, WT_CONN_SALVAGE);
+        }
     }
 
     WT_ERR(__wt_conf_compile_init(session, cfg));
@@ -3627,4 +3863,68 @@ err:
     }
 
     return (ret);
+}
+
+/*
+ * wiredtiger_open --
+ *     Main library entry point: open a new connection to a WiredTiger database.
+ *     This is the traditional string-based configuration API.
+ */
+int
+wiredtiger_open(const char *home, WT_EVENT_HANDLER *event_handler, const char *config,
+  WT_CONNECTION **connectionp)
+{
+    return __wiredtiger_open_internal(home, event_handler, config, NULL, 0, connectionp);
+}
+
+/*
+ * wiredtiger_open_ex --
+ *     Open a WiredTiger connection with structured configuration.
+ *
+ *     This is the struct-based configuration API that bypasses string parsing.
+ *     The struct config is stored on the connection early, and config reads
+ *     check it first before falling back to default string config parsing.
+ *
+ *     Performance: For keys present in the struct config, no string parsing
+ *     occurs. The config stack (base defaults, environment, config files)
+ *     is still built for keys not in the struct config.
+ */
+int
+wiredtiger_open_ex(const char *home, WT_EVENT_HANDLER *event_handler,
+  const WT_OPEN_CONFIG_ARG *config_args, size_t config_count, WT_CONNECTION **connectionp)
+{
+    WT_CONNECTION_IMPL *conn;
+    WT_DECL_RET;
+    WT_SESSION_IMPL *session;
+
+    *connectionp = NULL;
+
+    /* Initialize library if needed */
+    WT_RET(__wt_library_init());
+
+    /*
+     * Create a temporary connection and session for validation.
+     */
+    WT_RET(__wt_calloc_one(NULL, &conn));
+    wiredtiger_dummy_session_init(conn, event_handler);
+    session = &conn->dummy_session;
+
+    /* Validate all config args have known keys and correct types */
+    ret = __wt_open_conf_validate_args(session, config_args, config_count);
+    __wt_free(NULL, conn);
+    if (ret != 0)
+        return (ret);
+
+    /*
+     * Call the internal open function with struct config.
+     * The internal function will:
+     * 1. Store the struct config on the connection early
+     * 2. Check struct config first for config reads (bypass)
+     * 3. Fall back to string config (base defaults) for keys not in struct
+     *
+     * We pass NULL for the string config since struct config takes precedence.
+     * The base configuration defaults will still be loaded from the compiled
+     * base config string.
+     */
+    return __wiredtiger_open_internal(home, event_handler, NULL, config_args, config_count, connectionp);
 }

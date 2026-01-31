@@ -7,6 +7,36 @@
  */
 
 #include "wt_internal.h"
+#include "wiredtiger_open_conf.h"
+
+/*
+ * __cache_config_get_int --
+ *     Get an integer config value, checking struct config first if available.
+ */
+static int
+__cache_config_get_int(WT_SESSION_IMPL *session, WT_CONNECTION_IMPL *conn, const char **cfg,
+  uint64_t key_id, const char *key_name, int64_t *valuep)
+{
+    WT_CONFIG_ITEM cval;
+    WT_CONF_SOURCE *conf_source;
+    const char *parent_name;
+
+    conf_source = conn->conf_source;
+
+    /* Check struct config first (bypass string parsing) */
+    if (conf_source != NULL && conf_source->type == WT_CONF_SOURCE_STRUCT) {
+        if (__wt_open_conf_get_key_info(key_id, NULL, &parent_name, NULL) == 0) {
+            if (__wt_conf_source_get_int(
+                  session, conf_source, key_id, key_name, parent_name, valuep) == 0)
+                return (0); /* Found in struct config - bypass complete */
+        }
+    }
+
+    /* Fall back to string config */
+    WT_RET(__wt_config_gets(session, cfg, key_name, &cval));
+    *valuep = cval.val;
+    return (0);
+}
 
 /*
  * __wt_cache_config --
@@ -45,12 +75,18 @@ __wt_cache_config(WT_SESSION_IMPL *session, const char *cfg[], bool reconfig)
      * All other settings are independent of whether we are using a shared cache or not.
      */
     if (!now_shared) {
-        WT_RET(__wt_config_gets(session, cfg, "cache_size", &cval));
-        conn->cache_size = (uint64_t)cval.val;
+        int64_t cache_size_val;
+        WT_RET(__cache_config_get_int(
+          session, conn, cfg, WT_OPEN_CONF_cache_size, "cache_size", &cache_size_val));
+        conn->cache_size = (uint64_t)cache_size_val;
     }
     /* Set config values as percentages. */
-    WT_RET(__wt_config_gets(session, cfg, "cache_overhead", &cval));
-    cache->overhead_pct = (u_int)cval.val;
+    {
+        int64_t overhead_val;
+        WT_RET(__cache_config_get_int(
+          session, conn, cfg, WT_OPEN_CONF_cache_overhead, "cache_overhead", &overhead_val));
+        cache->overhead_pct = (u_int)overhead_val;
+    }
 
     return (0);
 }

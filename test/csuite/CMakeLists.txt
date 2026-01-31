@@ -397,3 +397,27 @@ define_c_test(
     ARGUMENTS
     DEPENDS "WT_POSIX"
 )
+
+define_c_test(
+    TARGET test_wt_open_conf
+    SOURCES wt_open_conf/main.c
+    DIR_NAME wt_open_conf
+    ARGUMENTS -h $<SHELL_PATH:$<TARGET_FILE_DIR:test_wt_open_conf>/WT_HOME>
+    DEPENDS "WT_POSIX"
+)
+
+define_c_test(
+    TARGET test_wt_open_conf_phase2
+    SOURCES wt_open_conf/phase2_test.c
+    DIR_NAME wt_open_conf_phase2
+    ARGUMENTS -h $<SHELL_PATH:$<TARGET_FILE_DIR:test_wt_open_conf_phase2>/WT_HOME>
+    DEPENDS "WT_POSIX"
+)
+
+define_c_test(
+    TARGET test_wt_open_conf_comprehensive
+    SOURCES wt_open_conf/comprehensive_test.c
+    DIR_NAME wt_open_conf_comprehensive
+    ARGUMENTS -h $<SHELL_PATH:$<TARGET_FILE_DIR:test_wt_open_conf_comprehensive>/WT_HOME>
+    DEPENDS "WT_POSIX"
+)

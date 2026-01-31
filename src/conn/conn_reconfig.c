@@ -7,6 +7,33 @@
  */
 
 #include "wt_internal.h"
+#include "wiredtiger_open_conf.h"
+
+/*
+ * __reconfig_get_string --
+ *     Get a string config value, checking struct config first if available.
+ */
+static int
+__reconfig_get_string(WT_SESSION_IMPL *session, WT_CONNECTION_IMPL *conn, const char **cfg,
+  uint64_t key_id, const char *key_name, WT_CONFIG_ITEM *cval)
+{
+    WT_CONF_SOURCE *conf_source;
+    const char *parent_name;
+
+    conf_source = conn->conf_source;
+
+    /* Check struct config first (bypass string parsing) */
+    if (conf_source != NULL && conf_source->type == WT_CONF_SOURCE_STRUCT) {
+        if (__wt_open_conf_get_key_info(key_id, NULL, &parent_name, NULL) == 0) {
+            if (__wt_conf_source_get_string(
+                  session, conf_source, key_id, key_name, parent_name, cval) == 0)
+                return (0);
+        }
+    }
+
+    /* Fall back to string config */
+    return __wt_config_gets(session, cfg, key_name, cval);
+}
 
 /*
  * __conn_compat_parse --
@@ -88,11 +115,13 @@ __wti_conn_compat_config(WT_SESSION_IMPL *session, const char **cfg, bool reconf
      * The maximum and minimum required version for existing files is only available on opening the
      * connection, not reconfigure.
      */
-    WT_RET(__wt_config_gets(session, cfg, "compatibility.require_min", &cval));
+    WT_RET(__reconfig_get_string(session, conn, cfg,
+      WT_OPEN_CONF_compatibility_require_min, "compatibility.require_min", &cval));
     if (cval.len != 0)
         WT_RET(__conn_compat_parse(session, &cval, &min_compat.major, &min_compat.minor));
 
-    WT_RET(__wt_config_gets(session, cfg, "compatibility.require_max", &cval));
+    WT_RET(__reconfig_get_string(session, conn, cfg,
+      WT_OPEN_CONF_compatibility_require_max, "compatibility.require_max", &cval));
     if (cval.len != 0)
         WT_RET(__conn_compat_parse(session, &cval, &max_compat.major, &max_compat.minor));
 
@@ -307,7 +336,7 @@ __wti_conn_statistics_config(WT_SESSION_IMPL *session, const char *cfg[])
 
     conn = S2C(session);
 
-    WT_RET(__wt_config_gets(session, cfg, "statistics", &cval));
+    WT_RET(__reconfig_get_string(session, conn, cfg, WT_OPEN_CONF_statistics, "statistics", &cval));
 
     flags = 0;
     set = 0;

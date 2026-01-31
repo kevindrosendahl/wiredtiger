@@ -8,6 +8,58 @@
 
 #include "wt_internal.h"
 #include "log_private.h"
+#include "wiredtiger_open_conf.h"
+
+/*
+ * __log_config_get_int --
+ *     Get an integer config value, checking struct config first if available.
+ */
+static int
+__log_config_get_int(WT_SESSION_IMPL *session, WT_CONNECTION_IMPL *conn, const char **cfg,
+  uint64_t key_id, const char *key_name, int64_t *valuep)
+{
+    WT_CONFIG_ITEM cval;
+    WT_CONF_SOURCE *conf_source;
+    const char *parent_name;
+
+    conf_source = conn->conf_source;
+
+    if (conf_source != NULL && conf_source->type == WT_CONF_SOURCE_STRUCT) {
+        if (__wt_open_conf_get_key_info(key_id, NULL, &parent_name, NULL) == 0) {
+            if (__wt_conf_source_get_int(
+                  session, conf_source, key_id, key_name, parent_name, valuep) == 0)
+                return (0);
+        }
+    }
+
+    WT_RET(__wt_config_gets(session, cfg, key_name, &cval));
+    *valuep = cval.val;
+    return (0);
+}
+
+/*
+ * __log_config_get_string --
+ *     Get a string config value, checking struct config first if available.
+ */
+static int
+__log_config_get_string(WT_SESSION_IMPL *session, WT_CONNECTION_IMPL *conn, const char **cfg,
+  uint64_t key_id, const char *key_name, WT_CONFIG_ITEM *cval)
+{
+    WT_CONF_SOURCE *conf_source;
+    const char *parent_name;
+
+    conf_source = conn->conf_source;
+
+    if (conf_source != NULL && conf_source->type == WT_CONF_SOURCE_STRUCT) {
+        if (__wt_open_conf_get_key_info(key_id, NULL, &parent_name, NULL) == 0) {
+            if (__wt_conf_source_get_string(
+                  session, conf_source, key_id, key_name, parent_name, cval) == 0)
+                return (0);
+        }
+    }
+
+    return __wt_config_gets(session, cfg, key_name, cval);
+}
 
 /*
  * __logmgr_sync_cfg --
@@ -220,8 +272,12 @@ __wt_logmgr_config(WT_SESSION_IMPL *session, const char **cfg, bool reconfig)
     conn = S2C(session);
     log_mgr = &conn->log_mgr;
 
-    WT_RET(__wt_config_gets(session, cfg, "log.enabled", &cval));
-    enabled = cval.val != 0;
+    {
+        int64_t log_enabled_val;
+        WT_RET(__log_config_get_int(
+          session, conn, cfg, WT_OPEN_CONF_log_enabled, "log.enabled", &log_enabled_val));
+        enabled = log_enabled_val != 0;
+    }
 
     /*
      * If we're reconfiguring, enabled must match the already existing setting.
@@ -258,11 +314,13 @@ __wt_logmgr_config(WT_SESSION_IMPL *session, const char **cfg, bool reconfig)
      */
     if (!reconfig) {
         log_mgr->compressor = NULL;
-        WT_RET(__wt_config_gets_none(session, cfg, "log.compressor", &cval));
+        WT_RET(__log_config_get_string(
+          session, conn, cfg, WT_OPEN_CONF_log_compressor, "log.compressor", &cval));
         WT_RET(__wt_compressor_config(session, &cval, &log_mgr->compressor));
 
         log_mgr->log_path = NULL;
-        WT_RET(__wt_config_gets(session, cfg, "log.path", &cval));
+        WT_RET(__log_config_get_string(
+          session, conn, cfg, WT_OPEN_CONF_log_path, "log.path", &cval));
         WT_RET(__wt_strndup(session, cval.str, cval.len, &log_mgr->log_path));
     }
 
@@ -274,12 +332,31 @@ __wt_logmgr_config(WT_SESSION_IMPL *session, const char **cfg, bool reconfig)
      * The configuration string log.archive is deprecated, only take it if it's explicitly set by
      * the application, that is, ignore its default value. Look for an explicit log.remove setting,
      * then an explicit log.archive setting, then the default log.remove setting.
+     *
+     * Note: For struct config, we check log.remove directly since log.archive is deprecated.
      */
-    if (__wt_config_gets(session, cfg + 1, "log.remove", &cval) != 0 &&
-      __wt_config_gets(session, cfg + 1, "log.archive", &cval) != 0)
-        WT_RET(__wt_config_gets(session, cfg, "log.remove", &cval));
-    if (cval.val != 0)
-        F_SET(&conn->log_mgr, WT_LOG_REMOVE);
+    {
+        int64_t log_remove_val;
+        bool found_in_struct = false;
+
+        if (conn->conf_source != NULL && conn->conf_source->type == WT_CONF_SOURCE_STRUCT) {
+            /* For struct config, just check log_remove directly */
+            if (__wt_conf_source_get_int(session, conn->conf_source,
+                  WT_OPEN_CONF_log_remove, "remove", "log", &log_remove_val) == 0) {
+                if (log_remove_val != 0)
+                    F_SET(&conn->log_mgr, WT_LOG_REMOVE);
+                found_in_struct = true;
+            }
+        }
+        if (!found_in_struct) {
+            /* Fall back to string config with legacy archive check */
+            if (__wt_config_gets(session, cfg + 1, "log.remove", &cval) != 0 &&
+              __wt_config_gets(session, cfg + 1, "log.archive", &cval) != 0)
+                WT_RET(__wt_config_gets(session, cfg, "log.remove", &cval));
+            if (cval.val != 0)
+                F_SET(&conn->log_mgr, WT_LOG_REMOVE);
+        }
+    }
 
     /*
      * The file size cannot be reconfigured. The amount of memory allocated to the log slots may be
@@ -289,8 +366,10 @@ __wt_logmgr_config(WT_SESSION_IMPL *session, const char **cfg, bool reconfig)
      * See above: should never happen.
      */
     if (!reconfig) {
-        WT_RET(__wt_config_gets(session, cfg, "log.file_max", &cval));
-        log_mgr->file_max = (wt_off_t)cval.val;
+        int64_t file_max_val;
+        WT_RET(__log_config_get_int(
+          session, conn, cfg, WT_OPEN_CONF_log_file_max, "log.file_max", &file_max_val));
+        log_mgr->file_max = (wt_off_t)file_max_val;
         /*
          * With the default log file extend configuration or if the log file extension size is
          * larger than the configured maximum log file size, set the log file extension size to the

@@ -377,6 +377,15 @@ extern int __wt_conf_compile_init(WT_SESSION_IMPL *session, const char **cfg)
 extern int __wt_conf_gets_func(WT_SESSION_IMPL *session, const WT_CONF *orig_conf,
   uint64_t orig_keys, int override_default, bool use_override_default, bool no_precompiled_def,
   WT_CONFIG_ITEM *value) WT_GCC_FUNC_DECL_ATTRIBUTE((warn_unused_result));
+extern int __wt_conf_source_get_boolean(WT_SESSION_IMPL *session, WT_CONF_SOURCE *source,
+  uint64_t key_id, const char *key_name, const char *parent_name, bool *valuep)
+  WT_GCC_FUNC_DECL_ATTRIBUTE((warn_unused_result));
+extern int __wt_conf_source_get_int(WT_SESSION_IMPL *session, WT_CONF_SOURCE *source,
+  uint64_t key_id, const char *key_name, const char *parent_name, int64_t *valuep)
+  WT_GCC_FUNC_DECL_ATTRIBUTE((warn_unused_result));
+extern int __wt_conf_source_get_string(WT_SESSION_IMPL *session, WT_CONF_SOURCE *source,
+  uint64_t key_id, const char *key_name, const char *parent_name, WT_CONFIG_ITEM *cval)
+  WT_GCC_FUNC_DECL_ATTRIBUTE((warn_unused_result));
 extern int __wt_config_check(WT_SESSION_IMPL *session, const WT_CONFIG_ENTRY *entry,
   const char *config, size_t config_len) WT_GCC_FUNC_DECL_ATTRIBUTE((warn_unused_result));
 extern int __wt_config_collapse(WT_SESSION_IMPL *session, const char **cfg, char **config_ret)
@@ -832,6 +841,11 @@ extern int __wt_object_unsupported(WT_SESSION_IMPL *session, const char *uri)
   WT_GCC_FUNC_DECL_ATTRIBUTE((cold)) WT_GCC_FUNC_DECL_ATTRIBUTE((warn_unused_result));
 extern int __wt_open(WT_SESSION_IMPL *session, const char *name, WT_FS_OPEN_FILE_TYPE file_type,
   u_int flags, WT_FH **fhp) WT_GCC_FUNC_DECL_ATTRIBUTE((warn_unused_result));
+extern int __wt_open_conf_get_key_info(
+  uint64_t key_id, const char **key_namep, const char **parent_namep, uint8_t *expected_typep)
+  WT_GCC_FUNC_DECL_ATTRIBUTE((warn_unused_result));
+extern int __wt_open_conf_validate_args(WT_SESSION_IMPL *session, const WT_OPEN_CONFIG_ARG *args,
+  size_t count) WT_GCC_FUNC_DECL_ATTRIBUTE((warn_unused_result));
 extern int __wt_open_cursor(WT_SESSION_IMPL *session, const char *uri, WT_CURSOR *owner,
   const char *cfg[], WT_CURSOR **cursorp) WT_GCC_FUNC_DECL_ATTRIBUTE((warn_unused_result));
 extern int __wt_open_internal_session(WT_CONNECTION_IMPL *conn, const char *name,
@@ -1676,6 +1690,9 @@ extern void __wt_cond_auto_wait(
 extern void __wt_cond_auto_wait_signal(WT_SESSION_IMPL *session, WT_CONDVAR *cond, bool progress,
   bool (*run_func)(WT_SESSION_IMPL *), bool *signalled);
 extern void __wt_conf_compile_discard(WT_SESSION_IMPL *session);
+extern void __wt_conf_source_init_string(WT_CONF_SOURCE *source, const char **cfg);
+extern void __wt_conf_source_init_struct(
+  WT_CONF_SOURCE *source, const WT_OPEN_CONFIG_ARG *args, size_t count);
 extern void __wt_config_init(WT_SESSION_IMPL *session, WT_CONFIG *conf, const char *str);
 extern void __wt_config_initn(
   WT_SESSION_IMPL *session, WT_CONFIG *conf, const char *str, size_t len);

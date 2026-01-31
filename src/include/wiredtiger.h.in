@@ -95,6 +95,7 @@ struct __wt_session;        typedef struct __wt_session WT_SESSION;
 #if !defined(DOXYGEN)
 struct __wt_storage_source; typedef struct __wt_storage_source WT_STORAGE_SOURCE;
 #endif
+struct __wt_open_config_arg; typedef struct __wt_open_config_arg WT_OPEN_CONFIG_ARG;
 
 /*!
  * A raw item of data to be managed, including a pointer to the data and a
@@ -3579,6 +3580,99 @@ struct __wt_connection {
  */
 int wiredtiger_open(const char *home,
     WT_EVENT_HANDLER *event_handler, const char *config,
+    WT_CONNECTION **connectionp) WT_ATTRIBUTE_LIBRARY_VISIBLE;
+
+/*!
+ * WT_OPEN_CONFIG_ARG --
+ *     A single configuration argument with a typed value.
+ *     Used with wiredtiger_open_ex to pass configuration without string parsing.
+ *
+ * @note Named WT_OPEN_CONFIG_ARG (not WT_CONFIG_ARG) because WT_CONFIG_ARG already
+ * exists in the public API for extension configuration (as const char **).
+ *
+ * @note String lifetime: String pointers (v_str.str) must remain valid for the
+ * duration of the wiredtiger_open_ex call. After the call returns (success
+ * or failure), the strings may be freed. WiredTiger copies any strings it
+ * needs to persist beyond the call.
+ */
+struct __wt_open_config_arg {
+    uint64_t key; /* Configuration key ID (WT_OPEN_CONF_*) */
+    union {
+        int64_t v_int; /* Integer/boolean value */
+        struct {
+            const char *str;
+            size_t len;
+        } v_str; /* String value */
+    } value;
+    uint8_t type; /* WT_OPEN_CONFIG_ARG_INT, _STR, _BOOL */
+};
+
+#define WT_OPEN_CONFIG_ARG_INT 0
+#define WT_OPEN_CONFIG_ARG_STR 1
+#define WT_OPEN_CONFIG_ARG_BOOL 2
+
+/*
+ * API version for compatibility checking.
+ * Increment when adding new keys or changing semantics.
+ */
+#define WT_OPEN_CONFIG_ARG_API_VERSION 1
+
+/*
+ * Helper macros for building config args.
+ * These ensure type field is set correctly, reducing errors.
+ */
+#define WT_OPEN_CONFIG_ARG_SET_INT(key_id, val) \
+    { .key = (key_id), .value.v_int = (val), .type = WT_OPEN_CONFIG_ARG_INT }
+
+#define WT_OPEN_CONFIG_ARG_SET_BOOL(key_id, val) \
+    { .key = (key_id), .value.v_int = (val) ? 1 : 0, .type = WT_OPEN_CONFIG_ARG_BOOL }
+
+#define WT_OPEN_CONFIG_ARG_SET_STR(key_id, s, slen) \
+    { .key = (key_id), .value.v_str = {.str = (s), .len = (slen)}, .type = WT_OPEN_CONFIG_ARG_STR }
+
+/*
+ * Sentinel value for array terminator.
+ * Using UINT64_MAX is safer than 0 since 0 could theoretically be a valid key.
+ */
+#define WT_OPEN_CONF_KEY_END UINT64_MAX
+
+#define WT_OPEN_CONFIG_ARG_END \
+    { .key = WT_OPEN_CONF_KEY_END, .type = 0 }
+
+/*!
+ * Open a WiredTiger connection with structured configuration.
+ *
+ * This is an alternative to wiredtiger_open that accepts configuration
+ * as typed key-value pairs, avoiding string parsing overhead.
+ *
+ * @param home Database home directory (may be NULL for in-memory databases)
+ * @param event_handler Event handler (may be NULL)
+ * @param config_args Array of configuration arguments (terminated by WT_OPEN_CONFIG_ARG_END)
+ * @param config_count Number of arguments (0 to use terminator sentinel, max 1000)
+ * @param[out] connectionp A pointer to the newly opened connection handle
+ * @errors
+ *     EINVAL if an unknown key ID is provided
+ *     EINVAL if a key's value type doesn't match expected type
+ *     EINVAL if config_count exceeds 1000 or array has more than 1000 entries
+ *     EINVAL if the same key ID appears multiple times in config_args
+ *     Other errors as per wiredtiger_open
+ *
+ * Configuration precedence:
+ *   1. config_args values (if key present)
+ *   2. WiredTiger compiled defaults (if key not in config_args)
+ *
+ * Limitations:
+ * - The "extensions" configuration is NOT supported via this API.
+ *   Use wiredtiger_open with a string config if you need extensions.
+ * - Not all configuration keys are supported. Unsupported keys return EINVAL.
+ * - Maximum of 1000 configuration entries.
+ *
+ * String lifetime:
+ *     String values in config_args must remain valid until this function
+ *     returns. They may be freed after the call completes.
+ */
+int wiredtiger_open_ex(const char *home, WT_EVENT_HANDLER *event_handler,
+    const WT_OPEN_CONFIG_ARG *config_args, size_t config_count,
     WT_CONNECTION **connectionp) WT_ATTRIBUTE_LIBRARY_VISIBLE;
 
 /*!
