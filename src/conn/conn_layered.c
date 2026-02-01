@@ -7,6 +7,58 @@
  */
 
 #include "wt_internal.h"
+#include "wiredtiger_open_conf.h"
+
+/*
+ * __layered_config_get_int --
+ *     Get an integer config value, checking struct config first if available.
+ */
+static int
+__layered_config_get_int(WT_SESSION_IMPL *session, WT_CONNECTION_IMPL *conn, const char **cfg,
+  uint64_t key_id, const char *key_name, int64_t *valuep)
+{
+    WT_CONFIG_ITEM cval;
+    WT_CONF_SOURCE *conf_source;
+    const char *parent_name;
+
+    conf_source = conn->conf_source;
+
+    if (conf_source != NULL && conf_source->type == WT_CONF_SOURCE_STRUCT) {
+        if (__wt_open_conf_get_key_info(key_id, NULL, &parent_name, NULL) == 0) {
+            if (__wt_conf_source_get_int(
+                  session, conf_source, key_id, key_name, parent_name, valuep) == 0)
+                return (0);
+        }
+    }
+
+    WT_RET(__wt_config_gets(session, cfg, key_name, &cval));
+    *valuep = cval.val;
+    return (0);
+}
+
+/*
+ * __layered_config_get_string --
+ *     Get a string config value, checking struct config first if available.
+ */
+static int
+__layered_config_get_string(WT_SESSION_IMPL *session, WT_CONNECTION_IMPL *conn, const char **cfg,
+  uint64_t key_id, const char *key_name, WT_CONFIG_ITEM *cval)
+{
+    WT_CONF_SOURCE *conf_source;
+    const char *parent_name;
+
+    conf_source = conn->conf_source;
+
+    if (conf_source != NULL && conf_source->type == WT_CONF_SOURCE_STRUCT) {
+        if (__wt_open_conf_get_key_info(key_id, NULL, &parent_name, NULL) == 0) {
+            if (__wt_conf_source_get_string(
+                  session, conf_source, key_id, key_name, parent_name, cval) == 0)
+                return (0);
+        }
+    }
+
+    return __wt_config_gets(session, cfg, key_name, cval);
+}
 
 /*
  * WT_DISAGG_CHECKPOINT_META --
@@ -52,7 +104,8 @@ __layered_get_disagg_checkpoint(WT_SESSION_IMPL *session, const char **cfg,
     /*
      * We need our own copy of the page log config string, it must be NULL terminated to look it up.
      */
-    WT_ERR(__wt_config_gets(session, cfg, "disaggregated.page_log", &cval));
+    WT_ERR(__layered_config_get_string(
+      session, conn, cfg, WT_OPEN_CONF_disaggregated_page_log, "disaggregated.page_log", &cval));
     WT_ERR(__wt_strndup(session, cval.str, cval.len, &page_log_name));
     WT_ERR(conn->iface.get_page_log(&conn->iface, page_log_name, &page_log));
 
@@ -1914,8 +1967,10 @@ __wti_disagg_conn_config(WT_SESSION_IMPL *session, const char **cfg, bool reconf
     if (reconfig) {
 
         /* Pick up a new checkpoint (followers only). */
-        WT_ERR_NOTFOUND_OK(
-          __wt_config_gets(session, cfg, "disaggregated.checkpoint_meta", &cval), true);
+        WT_ERR_NOTFOUND_OK(__layered_config_get_string(session, conn, cfg,
+                             WT_OPEN_CONF_disaggregated_checkpoint_meta,
+                             "disaggregated.checkpoint_meta", &cval),
+          true);
         if (ret == 0 && cval.len > 0) {
             /*
              * FIXME-WT-14733: currently the leader silently ignores the checkpoint_meta
@@ -1935,14 +1990,26 @@ __wti_disagg_conn_config(WT_SESSION_IMPL *session, const char **cfg, bool reconf
 
     /* Get the last materialized LSN. */
     /* FIXME-WT-15447 Consider deprecating this. */
-    WT_ERR_NOTFOUND_OK(
-      __wt_config_gets(session, cfg, "disaggregated.last_materialized_lsn", &cval), true);
-    if (ret == 0 && cval.len > 0 && cval.val >= 0)
-        WT_ERR_MSG_CHK(session, __wti_disagg_set_last_materialized_lsn(session, (uint64_t)cval.val),
-          "Failed to set the last materialized LSN to %" PRIu64, (uint64_t)cval.val);
+    {
+        int64_t lsn_val;
+        bool found_lsn = false;
+        ret = __layered_config_get_int(session, conn, cfg,
+          WT_OPEN_CONF_disaggregated_last_materialized_lsn, "disaggregated.last_materialized_lsn",
+          &lsn_val);
+        if (ret == 0) {
+            found_lsn = true;
+        } else if (ret == WT_NOTFOUND) {
+            ret = 0;
+        }
+        WT_ERR(ret);
+        if (found_lsn && lsn_val >= 0)
+            WT_ERR_MSG_CHK(session, __wti_disagg_set_last_materialized_lsn(session, (uint64_t)lsn_val),
+              "Failed to set the last materialized LSN to %" PRIu64, (uint64_t)lsn_val);
+    }
 
     /* Set the role. */
-    WT_ERR(__wt_config_gets(session, cfg, "disaggregated.role", &cval));
+    WT_ERR(__layered_config_get_string(
+      session, conn, cfg, WT_OPEN_CONF_disaggregated_role, "disaggregated.role", &cval));
     if (cval.len == 0 || WT_CONFIG_LIT_MATCH("follower", cval))
         leader = false;
     else if (WT_CONFIG_LIT_MATCH("leader", cval))
@@ -1979,11 +2046,13 @@ __wti_disagg_conn_config(WT_SESSION_IMPL *session, const char **cfg, bool reconf
         goto err;
 
     /* Remember the configuration. */
-    WT_ERR(__wt_config_gets(session, cfg, "disaggregated.page_log", &cval));
+    WT_ERR(__layered_config_get_string(
+      session, conn, cfg, WT_OPEN_CONF_disaggregated_page_log, "disaggregated.page_log", &cval));
     WT_ERR(__wt_strndup(session, cval.str, cval.len, &conn->disaggregated_storage.page_log));
 
     /* Setup any configured page log. */
-    WT_ERR(__wt_config_gets(session, cfg, "disaggregated.page_log", &cval));
+    WT_ERR(__layered_config_get_string(
+      session, conn, cfg, WT_OPEN_CONF_disaggregated_page_log, "disaggregated.page_log", &cval));
     WT_ERR(__wt_schema_open_page_log(session, &cval, &npage_log));
     conn->disaggregated_storage.npage_log = npage_log;
 
@@ -2012,8 +2081,10 @@ __wti_disagg_conn_config(WT_SESSION_IMPL *session, const char **cfg, bool reconf
         WT_ERR(__disagg_metadata_table_init(session));
 
         /* Pick up the selected checkpoint. */
-        WT_ERR_NOTFOUND_OK(
-          __wt_config_gets(session, cfg, "disaggregated.checkpoint_meta", &cval), true);
+        WT_ERR_NOTFOUND_OK(__layered_config_get_string(session, conn, cfg,
+                             WT_OPEN_CONF_disaggregated_checkpoint_meta,
+                             "disaggregated.checkpoint_meta", &cval),
+          true);
         if (ret == 0 && cval.len > 0) {
             WT_WITH_CHECKPOINT_LOCK(
               session, ret = __disagg_pick_up_checkpoint_meta(session, cval.str, cval.len));
@@ -2050,9 +2121,14 @@ __wti_disagg_conn_config(WT_SESSION_IMPL *session, const char **cfg, bool reconf
         if (cval.val != 0)
             F_SET(&conn->page_delta, WT_LEAF_PAGE_DELTA);
 
-        WT_ERR(__wt_config_gets(session, cfg, "disaggregated.lose_all_my_data", &cval));
-        if (cval.val != 0)
-            F_SET(&conn->disaggregated_storage, WT_DISAGG_NO_SYNC);
+        {
+            int64_t lose_data_val;
+            WT_ERR(__layered_config_get_int(session, conn, cfg,
+              WT_OPEN_CONF_disaggregated_lose_all_my_data, "disaggregated.lose_all_my_data",
+              &lose_data_val));
+            if (lose_data_val != 0)
+                F_SET(&conn->disaggregated_storage, WT_DISAGG_NO_SYNC);
+        }
 
         /*
          * Get the percentage of a page size that a delta must be less than in order to write that
@@ -2068,9 +2144,14 @@ __wti_disagg_conn_config(WT_SESSION_IMPL *session, const char **cfg, bool reconf
             conn->page_delta.max_consecutive_delta = (uint32_t)cval.val;
 
         /* Get the number of threads used to drain the ingest tables. */
-        WT_ERR(__wt_config_gets(session, cfg, "disaggregated.drain_threads", &cval));
-        if (cval.len > 0 && cval.val >= 0)
-            conn->layered_drain_data.thread_count = (uint32_t)cval.val;
+        {
+            int64_t drain_threads_val;
+            WT_ERR(__layered_config_get_int(session, conn, cfg,
+              WT_OPEN_CONF_disaggregated_drain_threads, "disaggregated.drain_threads",
+              &drain_threads_val));
+            if (drain_threads_val >= 0)
+                conn->layered_drain_data.thread_count = (uint32_t)drain_threads_val;
+        }
     }
 
 err:
@@ -2227,12 +2308,18 @@ __wti_ensure_clean_startup_dir(WT_SESSION_IMPL *session, const char *cfg[])
      * which depends on having run recovery, so the config hack is the simplest way to break that
      * dependency.
      */
-    WT_RET(__wt_config_gets(session, cfg, "disaggregated.page_log", &cval));
+    WT_RET(__layered_config_get_string(session, S2C(session), cfg,
+      WT_OPEN_CONF_disaggregated_page_log, "disaggregated.page_log", &cval));
     if (cval.len == 0)
         return (0); /* Not in disaggregated mode, nothing to do. */
-    WT_RET(__wt_config_gets(session, cfg, "disaggregated.lose_all_my_data", &cval));
-    if (cval.val == 0)
-        return (0);
+    {
+        int64_t lose_data_val;
+        WT_RET(__layered_config_get_int(session, S2C(session), cfg,
+          WT_OPEN_CONF_disaggregated_lose_all_my_data, "disaggregated.lose_all_my_data",
+          &lose_data_val));
+        if (lose_data_val == 0)
+            return (0);
+    }
 
     /*
      * Possible actions for local files are: fail, delete, ignore.
@@ -2242,7 +2329,8 @@ __wti_ensure_clean_startup_dir(WT_SESSION_IMPL *session, const char *cfg[])
      * "lose_all_my_data" option, it's considered to be safe enough to be triggered by accident.
      */
     bool fail;
-    WT_RET(__wt_config_gets(session, cfg, "disaggregated.local_files_action", &cval));
+    WT_RET(__layered_config_get_string(session, S2C(session), cfg,
+      WT_OPEN_CONF_disaggregated_local_files_action, "disaggregated.local_files_action", &cval));
     if (WT_CONFIG_LIT_MATCH("fail", cval))
         fail = true;
     else if (WT_CONFIG_LIT_MATCH("ignore", cval))

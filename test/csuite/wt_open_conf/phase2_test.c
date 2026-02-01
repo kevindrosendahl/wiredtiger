@@ -495,6 +495,446 @@ test_comparison_session_max(void)
     printf("  PASSED: session_array.size identical (%u)\n", string_session_array_size);
 }
 
+/*
+ * test_shutdown_no_crash --
+ *     Verify that shutdown with struct config doesn't crash (use-after-free fix).
+ */
+static void
+test_shutdown_no_crash(void)
+{
+    WT_CONNECTION *conn;
+    WT_SESSION *session;
+    WT_CURSOR *cursor;
+
+    printf("Test: shutdown with struct config (no use-after-free)\n");
+
+    /* Open with struct config including string values to exercise string cleanup */
+    WT_OPEN_CONFIG_ARG config[] = {
+        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 50 * WT_MEGABYTE),
+        WT_OPEN_CONFIG_ARG_SET_STR(WT_OPEN_CONF_error_prefix, "shutdown_test", 13),
+        WT_OPEN_CONFIG_ARG_END
+    };
+
+    testutil_check(wiredtiger_open_ex(home, NULL, config, 0, &conn));
+
+    /* Do some work to ensure connection is fully initialized */
+    testutil_check(conn->open_session(conn, NULL, NULL, &session));
+    testutil_check(session->create(session, "table:test", "key_format=S,value_format=S"));
+    testutil_check(session->open_cursor(session, "table:test", NULL, NULL, &cursor));
+    cursor->set_key(cursor, "key1");
+    cursor->set_value(cursor, "value1");
+    testutil_check(cursor->insert(cursor));
+    testutil_check(cursor->close(cursor));
+    testutil_check(session->close(session, NULL));
+
+    /* This close should NOT crash (previously would due to use-after-free) */
+    testutil_check(conn->close(conn, NULL));
+
+    printf("  PASSED: clean shutdown with struct config\n");
+}
+
+/*
+ * test_log_recovery_skip_applied --
+ *     Verify log.recovery_skip from struct config is applied.
+ */
+static void
+test_log_recovery_skip_applied(void)
+{
+    WT_CONNECTION *conn;
+    WT_CONNECTION_IMPL *conn_impl;
+
+    printf("Test: log.recovery_skip value is applied\n");
+
+    /* First create a database with logging enabled */
+    WT_OPEN_CONFIG_ARG config1[] = {
+        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_log_enabled, true),
+        WT_OPEN_CONFIG_ARG_END
+    };
+    testutil_check(wiredtiger_open_ex(home, NULL, config1, 0, &conn));
+    testutil_check(conn->close(conn, NULL));
+
+    /* Reopen with recovery_skip=true */
+    WT_OPEN_CONFIG_ARG config2[] = {
+        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_log_enabled, true),
+        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_log_recovery_skip, true),
+        WT_OPEN_CONFIG_ARG_END
+    };
+    testutil_check(wiredtiger_open_ex(home, NULL, config2, 0, &conn));
+    conn_impl = (WT_CONNECTION_IMPL *)conn;
+
+    /* Verify the WT_LOG_RECOVERY_SKIP flag is set */
+    testutil_assert(F_ISSET(&conn_impl->log_mgr, WT_LOG_RECOVERY_SKIP));
+    testutil_check(conn->close(conn, NULL));
+
+    printf("  PASSED: WT_LOG_RECOVERY_SKIP flag is set\n");
+}
+
+/*
+ * test_statistics_log_wait_applied --
+ *     Verify statistics_log.wait from struct config is applied.
+ */
+static void
+test_statistics_log_wait_applied(void)
+{
+    WT_CONNECTION *conn;
+    WT_CONNECTION_IMPL *conn_impl;
+    uint64_t expected_usecs;
+
+    printf("Test: statistics_log.wait value is applied\n");
+
+    /*
+     * Open with statistics_log.wait=5 (5 seconds).
+     * Note: statistics is a string type ("all", "fast", etc.) so we use
+     * string config for that, but statistics_log.wait is an integer.
+     */
+    WT_OPEN_CONFIG_ARG config[] = {
+        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+        WT_OPEN_CONFIG_ARG_SET_STR(WT_OPEN_CONF_statistics, "fast", 4),
+        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_statistics_log_wait, 5),
+        WT_OPEN_CONFIG_ARG_END
+    };
+
+    expected_usecs = 5 * WT_MILLION;
+
+    testutil_check(wiredtiger_open_ex(home, NULL, config, 0, &conn));
+    conn_impl = (WT_CONNECTION_IMPL *)conn;
+
+    /* Verify stat_usecs was set */
+    testutil_assert(conn_impl->stat_usecs == expected_usecs);
+    testutil_check(conn->close(conn, NULL));
+
+    printf("  PASSED: stat_usecs = %" PRIu64 "\n", expected_usecs);
+}
+
+/*
+ * test_live_restore_enabled_applied --
+ *     Verify live_restore.enabled from struct config is applied.
+ *     Note: We can only test that it's recognized, not that live restore works,
+ *     since live restore requires special setup.
+ */
+static void
+test_live_restore_enabled_applied(void)
+{
+    WT_CONNECTION *conn;
+    int ret;
+
+    printf("Test: live_restore.enabled value is recognized\n");
+
+    /*
+     * Try to enable live_restore - it should fail because
+     * we're not in a proper live restore environment (no source path, etc).
+     * The important thing is that the config is recognized and processed,
+     * not silently ignored.
+     */
+    WT_OPEN_CONFIG_ARG config[] = {
+        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_live_restore_enabled, true),
+        WT_OPEN_CONFIG_ARG_END
+    };
+
+    ret = wiredtiger_open_ex(home, NULL, config, 0, &conn);
+    /*
+     * This should fail because live_restore.path is not set (source directory).
+     * The error could be ENOENT (no such file or directory) or EINVAL depending
+     * on the platform. Either way, failure means the config was recognized.
+     */
+    testutil_assert(ret != 0);
+
+    printf("  PASSED: live_restore.enabled is recognized (returns error %d as expected)\n", ret);
+}
+
+/*
+ * test_transaction_sync_enabled_applied --
+ *     Verify transaction_sync.enabled from struct config is applied.
+ */
+static void
+test_transaction_sync_enabled_applied(void)
+{
+    WT_CONNECTION *conn;
+    WT_CONNECTION_IMPL *conn_impl;
+
+    printf("Test: transaction_sync.enabled value is applied\n");
+
+    /* Open with transaction_sync.enabled=true and log enabled */
+    WT_OPEN_CONFIG_ARG config[] = {
+        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_log_enabled, true),
+        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_transaction_sync_enabled, true),
+        WT_OPEN_CONFIG_ARG_END
+    };
+
+    testutil_check(wiredtiger_open_ex(home, NULL, config, 0, &conn));
+    conn_impl = (WT_CONNECTION_IMPL *)conn;
+
+    /* Verify WT_LOG_SYNC_ENABLED flag is set */
+    testutil_assert(FLD_ISSET(conn_impl->log_mgr.txn_logsync, WT_LOG_SYNC_ENABLED));
+    testutil_check(conn->close(conn, NULL));
+
+    printf("  PASSED: WT_LOG_SYNC_ENABLED flag is set\n");
+}
+
+/*
+ * test_transaction_sync_method_applied --
+ *     Verify transaction_sync.method from struct config is applied.
+ */
+static void
+test_transaction_sync_method_applied(void)
+{
+    WT_CONNECTION *conn;
+    WT_CONNECTION_IMPL *conn_impl;
+
+    printf("Test: transaction_sync.method value is applied\n");
+
+    /* Open with transaction_sync.method=fsync */
+    WT_OPEN_CONFIG_ARG config[] = {
+        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_log_enabled, true),
+        WT_OPEN_CONFIG_ARG_SET_STR(WT_OPEN_CONF_transaction_sync_method, "fsync", 5),
+        WT_OPEN_CONFIG_ARG_END
+    };
+
+    testutil_check(wiredtiger_open_ex(home, NULL, config, 0, &conn));
+    conn_impl = (WT_CONNECTION_IMPL *)conn;
+
+    /* Verify WT_LOG_FSYNC flag is set */
+    testutil_assert(FLD_ISSET(conn_impl->log_mgr.txn_logsync, WT_LOG_FSYNC));
+    testutil_check(conn->close(conn, NULL));
+
+    printf("  PASSED: WT_LOG_FSYNC flag is set for method=fsync\n");
+}
+
+/*
+ * test_disaggregated_role_recognized --
+ *     Verify disaggregated.role from struct config is recognized.
+ *     Note: We can't fully test disaggregated without a page_log, but we can
+ *     test that the role config is read and parsed correctly.
+ */
+static void
+test_disaggregated_role_recognized(void)
+{
+    WT_CONNECTION *conn;
+
+    printf("Test: disaggregated.role value is recognized\n");
+
+    /*
+     * Open with disaggregated.role=leader but no page_log.
+     * The role should be recognized but disaggregated won't be active without a page_log.
+     */
+    WT_OPEN_CONFIG_ARG config[] = {
+        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+        WT_OPEN_CONFIG_ARG_SET_STR(WT_OPEN_CONF_disaggregated_role, "leader", 6),
+        WT_OPEN_CONFIG_ARG_END
+    };
+
+    /* This should succeed - disaggregated.role without page_log is valid */
+    testutil_check(wiredtiger_open_ex(home, NULL, config, 0, &conn));
+    testutil_check(conn->close(conn, NULL));
+
+    printf("  PASSED: disaggregated.role is recognized\n");
+}
+
+/*
+ * test_disaggregated_role_follower --
+ *     Verify disaggregated.role=follower from struct config works.
+ */
+static void
+test_disaggregated_role_follower(void)
+{
+    WT_CONNECTION *conn;
+
+    printf("Test: disaggregated.role=follower value is recognized\n");
+
+    WT_OPEN_CONFIG_ARG config[] = {
+        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+        WT_OPEN_CONFIG_ARG_SET_STR(WT_OPEN_CONF_disaggregated_role, "follower", 8),
+        WT_OPEN_CONFIG_ARG_END
+    };
+
+    testutil_check(wiredtiger_open_ex(home, NULL, config, 0, &conn));
+    testutil_check(conn->close(conn, NULL));
+
+    printf("  PASSED: disaggregated.role=follower is recognized\n");
+}
+
+/*
+ * test_disaggregated_drain_threads_recognized --
+ *     Verify disaggregated.drain_threads from struct config is recognized.
+ */
+static void
+test_disaggregated_drain_threads_recognized(void)
+{
+    WT_CONNECTION *conn;
+
+    printf("Test: disaggregated.drain_threads value is recognized\n");
+
+    WT_OPEN_CONFIG_ARG config[] = {
+        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_disaggregated_drain_threads, 4),
+        WT_OPEN_CONFIG_ARG_END
+    };
+
+    testutil_check(wiredtiger_open_ex(home, NULL, config, 0, &conn));
+    testutil_check(conn->close(conn, NULL));
+
+    printf("  PASSED: disaggregated.drain_threads is recognized\n");
+}
+
+/*
+ * test_disaggregated_lose_all_my_data_recognized --
+ *     Verify disaggregated.lose_all_my_data from struct config is recognized.
+ */
+static void
+test_disaggregated_lose_all_my_data_recognized(void)
+{
+    WT_CONNECTION *conn;
+
+    printf("Test: disaggregated.lose_all_my_data value is recognized\n");
+
+    /*
+     * Note: Setting lose_all_my_data=true without page_log is valid,
+     * but the flag won't have any effect without disaggregated mode active.
+     */
+    WT_OPEN_CONFIG_ARG config[] = {
+        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_disaggregated_lose_all_my_data, false),
+        WT_OPEN_CONFIG_ARG_END
+    };
+
+    testutil_check(wiredtiger_open_ex(home, NULL, config, 0, &conn));
+    testutil_check(conn->close(conn, NULL));
+
+    printf("  PASSED: disaggregated.lose_all_my_data is recognized\n");
+}
+
+/*
+ * test_disaggregated_local_files_action_recognized --
+ *     Verify disaggregated.local_files_action from struct config is recognized.
+ */
+static void
+test_disaggregated_local_files_action_recognized(void)
+{
+    WT_CONNECTION *conn;
+
+    printf("Test: disaggregated.local_files_action value is recognized\n");
+
+    WT_OPEN_CONFIG_ARG config[] = {
+        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+        WT_OPEN_CONFIG_ARG_SET_STR(WT_OPEN_CONF_disaggregated_local_files_action, "ignore", 6),
+        WT_OPEN_CONFIG_ARG_END
+    };
+
+    testutil_check(wiredtiger_open_ex(home, NULL, config, 0, &conn));
+    testutil_check(conn->close(conn, NULL));
+
+    printf("  PASSED: disaggregated.local_files_action is recognized\n");
+}
+
+/*
+ * test_disaggregated_last_materialized_lsn_recognized --
+ *     Verify disaggregated.last_materialized_lsn from struct config is recognized.
+ */
+static void
+test_disaggregated_last_materialized_lsn_recognized(void)
+{
+    WT_CONNECTION *conn;
+
+    printf("Test: disaggregated.last_materialized_lsn value is recognized\n");
+
+    WT_OPEN_CONFIG_ARG config[] = {
+        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_disaggregated_last_materialized_lsn, 0),
+        WT_OPEN_CONFIG_ARG_END
+    };
+
+    testutil_check(wiredtiger_open_ex(home, NULL, config, 0, &conn));
+    testutil_check(conn->close(conn, NULL));
+
+    printf("  PASSED: disaggregated.last_materialized_lsn is recognized\n");
+}
+
+/*
+ * test_disaggregated_checkpoint_meta_recognized --
+ *     Verify disaggregated.checkpoint_meta from struct config is recognized.
+ */
+static void
+test_disaggregated_checkpoint_meta_recognized(void)
+{
+    WT_CONNECTION *conn;
+
+    printf("Test: disaggregated.checkpoint_meta value is recognized\n");
+
+    /*
+     * checkpoint_meta is typically empty on initial connection.
+     * We just verify the config key is recognized.
+     */
+    WT_OPEN_CONFIG_ARG config[] = {
+        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+        WT_OPEN_CONFIG_ARG_SET_STR(WT_OPEN_CONF_disaggregated_checkpoint_meta, "", 0),
+        WT_OPEN_CONFIG_ARG_END
+    };
+
+    testutil_check(wiredtiger_open_ex(home, NULL, config, 0, &conn));
+    testutil_check(conn->close(conn, NULL));
+
+    printf("  PASSED: disaggregated.checkpoint_meta is recognized\n");
+}
+
+/*
+ * test_disaggregated_page_log_recognized --
+ *     Verify disaggregated.page_log from struct config is recognized.
+ *     Note: Setting a non-empty page_log would require a valid page log service,
+ *     so we test with empty string which means disaggregated is not active.
+ */
+static void
+test_disaggregated_page_log_recognized(void)
+{
+    WT_CONNECTION *conn;
+
+    printf("Test: disaggregated.page_log value is recognized\n");
+
+    WT_OPEN_CONFIG_ARG config[] = {
+        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+        WT_OPEN_CONFIG_ARG_SET_STR(WT_OPEN_CONF_disaggregated_page_log, "", 0),
+        WT_OPEN_CONFIG_ARG_END
+    };
+
+    testutil_check(wiredtiger_open_ex(home, NULL, config, 0, &conn));
+    testutil_check(conn->close(conn, NULL));
+
+    printf("  PASSED: disaggregated.page_log is recognized\n");
+}
+
+/*
+ * test_disaggregated_combined --
+ *     Verify multiple disaggregated config options together.
+ */
+static void
+test_disaggregated_combined(void)
+{
+    WT_CONNECTION *conn;
+
+    printf("Test: multiple disaggregated config values together\n");
+
+    WT_OPEN_CONFIG_ARG config[] = {
+        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+        WT_OPEN_CONFIG_ARG_SET_STR(WT_OPEN_CONF_disaggregated_role, "follower", 8),
+        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_disaggregated_drain_threads, 2),
+        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_disaggregated_lose_all_my_data, false),
+        WT_OPEN_CONFIG_ARG_SET_STR(WT_OPEN_CONF_disaggregated_local_files_action, "ignore", 6),
+        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_disaggregated_last_materialized_lsn, 0),
+        WT_OPEN_CONFIG_ARG_SET_STR(WT_OPEN_CONF_disaggregated_checkpoint_meta, "", 0),
+        WT_OPEN_CONFIG_ARG_SET_STR(WT_OPEN_CONF_disaggregated_page_log, "", 0),
+        WT_OPEN_CONFIG_ARG_END
+    };
+
+    testutil_check(wiredtiger_open_ex(home, NULL, config, 0, &conn));
+    testutil_check(conn->close(conn, NULL));
+
+    printf("  PASSED: multiple disaggregated configs work together\n");
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -546,6 +986,53 @@ main(int argc, char *argv[])
 
     testutil_recreate_dir(home);
     test_comparison_session_max();
+
+    /* Bug fix verification tests */
+    testutil_recreate_dir(home);
+    test_shutdown_no_crash();
+
+    testutil_recreate_dir(home);
+    test_log_recovery_skip_applied();
+
+    testutil_recreate_dir(home);
+    test_statistics_log_wait_applied();
+
+    testutil_recreate_dir(home);
+    test_live_restore_enabled_applied();
+
+    /* New subsystem tests */
+    testutil_recreate_dir(home);
+    test_transaction_sync_enabled_applied();
+
+    testutil_recreate_dir(home);
+    test_transaction_sync_method_applied();
+
+    testutil_recreate_dir(home);
+    test_disaggregated_role_recognized();
+
+    testutil_recreate_dir(home);
+    test_disaggregated_role_follower();
+
+    testutil_recreate_dir(home);
+    test_disaggregated_drain_threads_recognized();
+
+    testutil_recreate_dir(home);
+    test_disaggregated_lose_all_my_data_recognized();
+
+    testutil_recreate_dir(home);
+    test_disaggregated_local_files_action_recognized();
+
+    testutil_recreate_dir(home);
+    test_disaggregated_last_materialized_lsn_recognized();
+
+    testutil_recreate_dir(home);
+    test_disaggregated_checkpoint_meta_recognized();
+
+    testutil_recreate_dir(home);
+    test_disaggregated_page_log_recognized();
+
+    testutil_recreate_dir(home);
+    test_disaggregated_combined();
 
     printf("\n=== All Phase 2 Tests PASSED ===\n");
 

@@ -7,6 +7,31 @@
  */
 
 #include "wt_internal.h"
+#include "wiredtiger_open_conf.h"
+
+/*
+ * __conn_open_config_get_string --
+ *     Get a string config value, checking struct config first if available.
+ */
+static int
+__conn_open_config_get_string(WT_SESSION_IMPL *session, WT_CONNECTION_IMPL *conn, const char **cfg,
+  uint64_t key_id, const char *key_name, WT_CONFIG_ITEM *cval)
+{
+    WT_CONF_SOURCE *conf_source;
+    const char *parent_name;
+
+    conf_source = conn->conf_source;
+
+    if (conf_source != NULL && conf_source->type == WT_CONF_SOURCE_STRUCT) {
+        if (__wt_open_conf_get_key_info(key_id, NULL, &parent_name, NULL) == 0) {
+            if (__wt_conf_source_get_string(
+                  session, conf_source, key_id, key_name, parent_name, cval) == 0)
+                return (0);
+        }
+    }
+
+    return __wt_config_gets(session, cfg, key_name, cval);
+}
 
 /*
  * __wti_connection_open --
@@ -251,7 +276,8 @@ __wti_connection_workers(WT_SESSION_IMPL *session, const char *cfg[])
      * Note that tiered storage does not work in disagg mode. We need this check to ensure the
      * tiered serer is not started when disagg is enabled.
      */
-    WT_RET(__wt_config_gets(session, cfg, "disaggregated.page_log", &cval));
+    WT_RET(__conn_open_config_get_string(session, S2C(session), cfg,
+      WT_OPEN_CONF_disaggregated_page_log, "disaggregated.page_log", &cval));
     bool disagg = (cval.len != 0);
 
     WT_RET(__wti_tiered_storage_create(session, disagg));

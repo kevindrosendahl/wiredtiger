@@ -69,10 +69,13 @@ static int
 __logmgr_sync_cfg(WT_SESSION_IMPL *session, const char **cfg)
 {
     WT_CONFIG_ITEM cval;
+    WT_CONNECTION_IMPL *conn;
     WT_LOG_MANAGER *log_mgr;
+    int64_t enabled_val;
     uint32_t txn_logsync;
 
-    log_mgr = &S2C(session)->log_mgr;
+    conn = S2C(session);
+    log_mgr = &conn->log_mgr;
 
     /*
      * Collect all the flag settings into a local variable and then assign into the connection after
@@ -80,13 +83,15 @@ __logmgr_sync_cfg(WT_SESSION_IMPL *session, const char **cfg)
      * processing during a reconfigure.
      */
     txn_logsync = 0;
-    WT_RET(__wt_config_gets(session, cfg, "transaction_sync.enabled", &cval));
-    if (cval.val)
+    WT_RET(__log_config_get_int(session, conn, cfg, WT_OPEN_CONF_transaction_sync_enabled,
+      "transaction_sync.enabled", &enabled_val));
+    if (enabled_val)
         FLD_SET(txn_logsync, WT_LOG_SYNC_ENABLED);
     else
         FLD_CLR(txn_logsync, WT_LOG_SYNC_ENABLED);
 
-    WT_RET(__wt_config_gets(session, cfg, "transaction_sync.method", &cval));
+    WT_RET(__log_config_get_string(session, conn, cfg, WT_OPEN_CONF_transaction_sync_method,
+      "transaction_sync.method", &cval));
     if (WT_CONFIG_LIT_MATCH("dsync", cval))
         FLD_SET(txn_logsync, WT_LOG_DSYNC | WT_LOG_FLUSH);
     else if (WT_CONFIG_LIT_MATCH("fsync", cval))
@@ -380,25 +385,38 @@ __wt_logmgr_config(WT_SESSION_IMPL *session, const char **cfg, bool reconfig)
         WT_STAT_CONN_SET(session, log_max_filesize, log_mgr->file_max);
     }
 
-    WT_RET(__wt_config_gets(session, cfg, "log.os_cache_dirty_pct", &cval));
-    if (cval.val != 0)
-        log_mgr->dirty_max = (log_mgr->file_max * cval.val) / 100;
+    {
+        int64_t os_cache_dirty_pct_val;
+        WT_RET(__log_config_get_int(session, conn, cfg, WT_OPEN_CONF_log_os_cache_dirty_pct,
+          "log.os_cache_dirty_pct", &os_cache_dirty_pct_val));
+        if (os_cache_dirty_pct_val != 0)
+            log_mgr->dirty_max = (log_mgr->file_max * os_cache_dirty_pct_val) / 100;
+    }
 
     /*
      * If pre-allocation is configured, set the initial number to a few. We'll adapt as load
      * dictates.
      */
-    WT_RET(__wt_config_gets(session, cfg, "log.prealloc", &cval));
-    if (cval.val != 0) {
-        WT_RET(__wt_config_gets(session, cfg, "log.prealloc_init_count", &cval));
-        log_mgr->prealloc = (uint32_t)cval.val;
-        log_mgr->prealloc_init_count = (uint32_t)cval.val;
-        WT_ASSERT(session, __wti_log_is_prealloc_enabled(session));
+    {
+        int64_t prealloc_val, prealloc_init_count_val;
+        WT_RET(__log_config_get_int(
+          session, conn, cfg, WT_OPEN_CONF_log_prealloc, "log.prealloc", &prealloc_val));
+        if (prealloc_val != 0) {
+            WT_RET(__log_config_get_int(session, conn, cfg, WT_OPEN_CONF_log_prealloc_init_count,
+              "log.prealloc_init_count", &prealloc_init_count_val));
+            log_mgr->prealloc = (uint32_t)prealloc_init_count_val;
+            log_mgr->prealloc_init_count = (uint32_t)prealloc_init_count_val;
+            WT_ASSERT(session, __wti_log_is_prealloc_enabled(session));
+        }
     }
 
-    WT_RET(__wt_config_gets(session, cfg, "log.force_write_wait", &cval));
-    if (cval.val != 0)
-        log_mgr->force_write_wait = (uint32_t)cval.val;
+    {
+        int64_t force_write_wait_val;
+        WT_RET(__log_config_get_int(session, conn, cfg, WT_OPEN_CONF_log_force_write_wait,
+          "log.force_write_wait", &force_write_wait_val));
+        if (force_write_wait_val != 0)
+            log_mgr->force_write_wait = (uint32_t)force_write_wait_val;
+    }
 
     /*
      * Note it's meaningless to reconfigure this value during runtime, it only matters on create
@@ -407,21 +425,33 @@ __wt_logmgr_config(WT_SESSION_IMPL *session, const char **cfg, bool reconfig)
      * See above: should never happen.
      */
     if (!reconfig) {
+        /*
+         * log.recover is a string type ("error" or "on"), which requires special handling.
+         * Keep using string parsing for this one since it needs string comparison.
+         */
         WT_RET(__wt_config_gets_def(session, cfg, "log.recover", 0, &cval));
         if (WT_CONFIG_LIT_MATCH("error", cval))
             F_SET(&conn->log_mgr, WT_LOG_RECOVER_ERR);
 
-        WT_RET(__wt_config_gets(session, cfg, "log.recovery_skip", &cval));
-        if (cval.val != 0)
-            F_SET(&conn->log_mgr, WT_LOG_RECOVERY_SKIP);
+        {
+            int64_t recovery_skip_val;
+            WT_RET(__log_config_get_int(session, conn, cfg, WT_OPEN_CONF_log_recovery_skip,
+              "log.recovery_skip", &recovery_skip_val));
+            if (recovery_skip_val != 0)
+                F_SET(&conn->log_mgr, WT_LOG_RECOVERY_SKIP);
+        }
     }
 
-    WT_RET(__wt_config_gets(session, cfg, "log.zero_fill", &cval));
-    if (cval.val != 0) {
-        if (F_ISSET(conn, WT_CONN_READONLY))
-            WT_RET_MSG(
-              session, EINVAL, "Read-only configuration incompatible with zero-filling log files");
-        F_SET(&conn->log_mgr, WT_LOG_ZERO_FILL);
+    {
+        int64_t zero_fill_val;
+        WT_RET(__log_config_get_int(
+          session, conn, cfg, WT_OPEN_CONF_log_zero_fill, "log.zero_fill", &zero_fill_val));
+        if (zero_fill_val != 0) {
+            if (F_ISSET(conn, WT_CONN_READONLY))
+                WT_RET_MSG(session, EINVAL,
+                  "Read-only configuration incompatible with zero-filling log files");
+            F_SET(&conn->log_mgr, WT_LOG_ZERO_FILL);
+        }
     }
 
     WT_RET(__logmgr_sync_cfg(session, cfg));

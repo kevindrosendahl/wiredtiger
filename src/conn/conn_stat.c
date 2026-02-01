@@ -7,6 +7,7 @@
  */
 
 #include "wt_internal.h"
+#include "wiredtiger_open_conf.h"
 
 #ifdef __GNUC__
 #if __GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ > 1)
@@ -18,6 +19,28 @@
 #pragma GCC diagnostic ignored "-Wformat-nonliteral"
 #endif
 #endif
+
+/*
+ * __stat_config_get_int --
+ *     Get an integer config value, checking struct config first for bypass.
+ */
+static int
+__stat_config_get_int(WT_SESSION_IMPL *session, WT_CONNECTION_IMPL *conn, const char *cfg[],
+  uint64_t key_id, const char *key_name, int64_t *valuep)
+{
+    WT_CONFIG_ITEM cval;
+    WT_CONF_SOURCE *conf_source;
+
+    conf_source = conn->conf_source;
+    if (conf_source != NULL && conf_source->type == WT_CONF_SOURCE_STRUCT) {
+        if (__wt_conf_source_get_int(session, conf_source, key_id, key_name, NULL, valuep) == 0)
+            return (0);
+    }
+    /* Fall back to string config */
+    WT_RET(__wt_config_gets(session, cfg, key_name, &cval));
+    *valuep = cval.val;
+    return (0);
+}
 
 /*
  * __stat_sources_free --
@@ -134,21 +157,33 @@ __statlog_config(WT_SESSION_IMPL *session, const char **cfg, bool *runp)
     sources = NULL;
 
     /* Only start the server if wait time is non-zero */
-    WT_RET(__wt_config_gets(session, cfg, "statistics_log.wait", &cval));
-    *runp = cval.val != 0;
-    conn->stat_usecs = (uint64_t)cval.val * WT_MILLION;
+    {
+        int64_t wait_val;
+        WT_RET(__stat_config_get_int(
+          session, conn, cfg, WT_OPEN_CONF_statistics_log_wait, "statistics_log.wait", &wait_val));
+        *runp = wait_val != 0;
+        conn->stat_usecs = (uint64_t)wait_val * WT_MILLION;
+    }
 
     /*
      * Only set the JSON flag when stats are enabled, otherwise setting this flag can implicitly
      * enable statistics gathering.
      */
-    WT_RET(__wt_config_gets(session, cfg, "statistics_log.json", &cval));
-    if (cval.val != 0 && WT_STAT_ENABLED(session))
-        FLD_SET(conn->stat_flags, WT_STAT_JSON);
+    {
+        int64_t json_val;
+        WT_RET(__stat_config_get_int(
+          session, conn, cfg, WT_OPEN_CONF_statistics_log_json, "statistics_log.json", &json_val));
+        if (json_val != 0 && WT_STAT_ENABLED(session))
+            FLD_SET(conn->stat_flags, WT_STAT_JSON);
+    }
 
-    WT_RET(__wt_config_gets(session, cfg, "statistics_log.on_close", &cval));
-    if (cval.val != 0)
-        FLD_SET(conn->stat_flags, WT_STAT_ON_CLOSE);
+    {
+        int64_t on_close_val;
+        WT_RET(__stat_config_get_int(session, conn, cfg, WT_OPEN_CONF_statistics_log_on_close,
+          "statistics_log.on_close", &on_close_val));
+        if (on_close_val != 0)
+            FLD_SET(conn->stat_flags, WT_STAT_ON_CLOSE);
+    }
 
     /*
      * We don't allow the log path to be reconfigured for security reasons. (Applications passing

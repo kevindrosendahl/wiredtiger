@@ -1937,7 +1937,8 @@ __conn_single(WT_SESSION_IMPL *session, const char *cfg[])
      * which depends on having run recovery, so the config hack is the simplest way to break that
      * dependency.
      */
-    WT_RET(__wt_config_gets(session, cfg, "disaggregated.page_log", &cval));
+    WT_RET(__conn_config_get_string(session, conn, cfg, WT_OPEN_CONF_disaggregated_page_log,
+      "disaggregated.page_log", &cval));
     is_disag = cval.len > 0;
 
     bytelock = true;
@@ -2996,10 +2997,14 @@ __conn_config_file_system(WT_SESSION_IMPL *session, const char *cfg[])
      * Check the "live_restore" config. If it is provided validate that a custom file system has not
      * been provided, and that the connection is not in memory or Windows.
      */
-    WT_RET(__wt_config_gets(session, cfg, "live_restore.enabled", &cval));
-
     WT_CONNECTION_IMPL *conn = S2C(session);
-    bool live_restore_enabled = (bool)cval.val;
+    bool live_restore_enabled;
+    {
+        int64_t lr_enabled_val;
+        WT_RET(__conn_config_get_int(session, conn, cfg, WT_OPEN_CONF_live_restore_enabled,
+          "live_restore.enabled", &lr_enabled_val));
+        live_restore_enabled = (lr_enabled_val != 0);
+    }
     if (live_restore_enabled) {
         /* Live restore compatibility checks. */
         if (conn->file_system != NULL)
@@ -3007,7 +3012,8 @@ __conn_config_file_system(WT_SESSION_IMPL *session, const char *cfg[])
         if (F_ISSET(conn, WT_CONN_IN_MEMORY))
             WT_RET_MSG(
               session, EINVAL, "Live restore is not compatible with an in-memory connections");
-        WT_RET(__wt_config_gets(session, cfg, "disaggregated.page_log", &cval));
+        WT_RET(__conn_config_get_string(session, conn, cfg, WT_OPEN_CONF_disaggregated_page_log,
+          "disaggregated.page_log", &cval));
         if (cval.len != 0)
             WT_RET_MSG(
               session, EINVAL, "Live restore is not compatible with disaggregated storage mode");

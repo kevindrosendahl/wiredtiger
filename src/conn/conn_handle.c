@@ -147,8 +147,12 @@ __wti_connection_destroy(WT_CONNECTION_IMPL *conn)
     __wt_free(session, conn->error_prefix);
     __wt_free(session, conn->home);
     __wt_free(session, WT_CONN_SESSIONS_GET(conn));
-    __wt_stat_connection_discard(session, conn);
 
+    /*
+     * Free struct config source BEFORE __wt_stat_connection_discard.
+     * The __wt_free macro updates memory statistics, which requires the
+     * stats array to still be valid.
+     */
     /* Free struct config source if present (from wiredtiger_open_ex) */
     if (conn->conf_source != NULL) {
         /*
@@ -184,6 +188,9 @@ __wti_connection_destroy(WT_CONNECTION_IMPL *conn)
         }
         __wt_free(session, conn->conf_source);
     }
+
+    /* Now safe to discard stats - all __wt_free calls are done */
+    __wt_stat_connection_discard(session, conn);
 
     __wt_free(NULL, conn);
 }
