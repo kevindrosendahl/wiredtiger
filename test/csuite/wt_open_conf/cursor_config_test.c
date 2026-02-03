@@ -30,8 +30,8 @@
 /*
  * Test program for cursor config fast path statistics.
  *
- * This verifies that the NULL/empty config and "overwrite=false" fast paths
- * are properly tracked via statistics.
+ * This verifies that the NULL/empty config and "overwrite=false" fast paths are properly tracked
+ * via statistics.
  */
 
 static const char *home;
@@ -100,8 +100,8 @@ test_null_config_fast_path(void)
       fast_null_after);
 
     /*
-     * The difference may not be exactly 100 because the cursor cache may be involved,
-     * but we should see a significant increase.
+     * The difference may not be exactly 100 because the cursor cache may be involved, but we should
+     * see a significant increase.
      */
     testutil_assert(fast_null_after > fast_null_before);
 
@@ -137,7 +137,8 @@ test_overwrite_false_fast_path(void)
 
     /* Open cursors with overwrite=false multiple times */
     for (i = 0; i < 100; i++) {
-        testutil_check(session->open_cursor(session, "table:test", NULL, "overwrite=false", &cursor));
+        testutil_check(
+          session->open_cursor(session, "table:test", NULL, "overwrite=false", &cursor));
         testutil_check(cursor->close(cursor));
     }
 

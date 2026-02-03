@@ -495,8 +495,8 @@ __btree_conf_cache_free(WT_SESSION_IMPL *session, WT_BTREE_CONF *conf)
 
 /*
  * __btree_conf_cache_populate --
- *     Parse btree configuration from metadata string and cache it on the dhandle.
- *     Called once per dhandle lifetime under exclusive lock.
+ *     Parse btree configuration from metadata string and cache it on the dhandle. Called once per
+ *     dhandle lifetime under exclusive lock.
  */
 static int
 __btree_conf_cache_populate(WT_SESSION_IMPL *session, WT_DATA_HANDLE *dhandle, const char *cfg[])
@@ -653,10 +653,9 @@ __btree_conf_from_cache(WT_SESSION_IMPL *session, WT_BTREE *btree, WT_BTREE_CONF
     conn = S2C(session);
 
     /*
-     * String values - ALWAYS COPY to btree.
-     * Design rationale: __btree_clear() frees btree->key_format etc.
-     * If we shared pointers with the cache, we'd have dual-ownership
-     * and risk double-free. Copying is simpler and safer.
+     * String values - ALWAYS COPY to btree. Design rationale: __btree_clear() frees
+     * btree->key_format etc. If we shared pointers with the cache, we'd have dual-ownership and
+     * risk double-free. Copying is simpler and safer.
      */
     WT_ERR(__wt_strdup(session, conf->key_format, &btree->key_format));
     WT_ERR(__wt_strdup(session, conf->value_format, &btree->value_format));
@@ -704,7 +703,8 @@ __btree_conf_from_cache(WT_SESSION_IMPL *session, WT_BTREE *btree, WT_BTREE_CONF
         F_CLR(btree, WT_BTREE_IN_MEMORY);
 
     /* Handle logging based on connection and btree flags */
-    if (F_ISSET(&conn->log_mgr, WT_LOG_ENABLED) && FLD_ISSET(conf->flags, WT_BTREE_CONF_LOG_ENABLED))
+    if (F_ISSET(&conn->log_mgr, WT_LOG_ENABLED) &&
+      FLD_ISSET(conf->flags, WT_BTREE_CONF_LOG_ENABLED))
         F_SET(btree, WT_BTREE_LOGGED);
 
     if (F_ISSET(conn, WT_CONN_IN_MEMORY) || F_ISSET(btree, WT_BTREE_IN_MEMORY)) {
@@ -739,8 +739,8 @@ __btree_conf_from_cache(WT_SESSION_IMPL *session, WT_BTREE *btree, WT_BTREE_CONF
 
         /* Must read app_metadata from config for collator init */
         WT_ERR(__wt_config_gets(session, btree->dhandle->cfg, "app_metadata", &metadata));
-        WT_ERR(__wt_collator_config(
-          session, btree->dhandle->name, &cval, &metadata, &btree->collator, &btree->collator_owned));
+        WT_ERR(__wt_collator_config(session, btree->dhandle->name, &cval, &metadata,
+          &btree->collator, &btree->collator_owned));
     }
 
     return (0);
@@ -788,8 +788,8 @@ __btree_conf(WT_SESSION_IMPL *session, WT_CKPT *ckpt, bool is_ckpt)
     conn = S2C(session);
 
     /*
-     * Check if we can use the cached config. The cache is populated on
-     * first open and reused for subsequent opens.
+     * Check if we can use the cached config. The cache is populated on first open and reused for
+     * subsequent opens.
      */
     use_cache = (dhandle->btree_conf_cache != NULL && dhandle->btree_conf_cache->parsed);
 
@@ -800,9 +800,9 @@ __btree_conf(WT_SESSION_IMPL *session, WT_CKPT *ckpt, bool is_ckpt)
         WT_STAT_DSRC_INCR(session, btree_conf_cache_miss);
 
         /*
-         * Cache population requires exclusive access to the dhandle.
-         * This should always be true since we're called from __wt_btree_open()
-         * which is called from __wt_conn_dhandle_open() with exclusive lock.
+         * Cache population requires exclusive access to the dhandle. This should always be true
+         * since we're called from __wt_btree_open() which is called from __wt_conn_dhandle_open()
+         * with exclusive lock.
          */
         WT_ASSERT(session, F_ISSET(dhandle, WT_DHANDLE_EXCLUSIVE));
 
@@ -822,8 +822,8 @@ __btree_conf(WT_SESSION_IMPL *session, WT_CKPT *ckpt, bool is_ckpt)
     }
 
     /*
-     * Format validation - run even when loading from cache.
-     * This validates the key/value formats are structurally correct.
+     * Format validation - run even when loading from cache. This validates the key/value formats
+     * are structurally correct.
      */
     cval.str = btree->key_format;
     cval.len = strlen(btree->key_format);
@@ -883,16 +883,14 @@ __btree_conf(WT_SESSION_IMPL *session, WT_CKPT *ckpt, bool is_ckpt)
     }
 
     /*
-     * Page sizes - MUST be computed every time, not cached.
-     * This handles runtime-adjusted values including maxmempage,
-     * splitmempage, maxleafkey, maxleafvalue.
+     * Page sizes - MUST be computed every time, not cached. This handles runtime-adjusted values
+     * including maxmempage, splitmempage, maxleafkey, maxleafvalue.
      */
     WT_RET(__btree_page_sizes(session));
 
     /*
-     * Configure compression adjustment. This depends on the compressor
-     * pointer which was looked up from cache, but the adjustment is
-     * runtime-dependent on page sizes.
+     * Configure compression adjustment. This depends on the compressor pointer which was looked up
+     * from cache, but the adjustment is runtime-dependent on page sizes.
      */
     btree->intlpage_compadjust = false;
     btree->maxintlpage_precomp = btree->maxintlpage;

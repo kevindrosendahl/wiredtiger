@@ -142,6 +142,11 @@ connection_disaggregated_config_common = [
     Config('local_files_action', 'delete', r'''
         what should be done to the local files in disaggregated mode upon startup.''',
         choices=['delete', 'fail', 'ignore'], undoc=True),
+    Config('local_mode', 'false', r'''
+        enable local mode semantics for step-down. When true, a checkpoint is
+        performed before stepping down from leader to follower to ensure all
+        committed data is visible to other processes.''',
+        type='boolean', undoc=True),
     Config('lose_all_my_data', 'false', r'''
         This setting skips file system syncs, and will cause data loss outside of a
         disaggregated storage context.''',

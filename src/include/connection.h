@@ -237,7 +237,8 @@ struct __wt_disaggregated_storage {
      * e.g. if the config parsing does anything even slightly off the beaten track.
      */
 /* AUTOMATIC FLAG VALUE GENERATION START 0 */
-#define WT_DISAGG_NO_SYNC 0x1u
+#define WT_DISAGG_LOCAL_MODE 0x1u
+#define WT_DISAGG_NO_SYNC 0x2u
     /* AUTOMATIC FLAG VALUE GENERATION STOP 8 */
     uint8_t flags;
 };
@@ -582,8 +583,8 @@ struct __wt_connection_impl {
     const char *cfg; /* Connection configuration */
 
     /*
-     * Structured configuration source for wiredtiger_open_ex.
-     * Only valid during wiredtiger_open_ex initialization; NULL otherwise.
+     * Structured configuration source for wiredtiger_open_ex. Only valid during wiredtiger_open_ex
+     * initialization; NULL otherwise.
      */
     WT_CONF_SOURCE *conf_source;
 

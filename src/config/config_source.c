@@ -24,8 +24,7 @@ __wt_conf_source_init_string(WT_CONF_SOURCE *source, const char **cfg)
  *     Initialize a config source for struct-based config.
  */
 void
-__wt_conf_source_init_struct(
-  WT_CONF_SOURCE *source, const WT_OPEN_CONFIG_ARG *args, size_t count)
+__wt_conf_source_init_struct(WT_CONF_SOURCE *source, const WT_OPEN_CONFIG_ARG *args, size_t count)
 {
     source->type = WT_CONF_SOURCE_STRUCT;
     source->u.structured.args = args;
@@ -34,8 +33,8 @@ __wt_conf_source_init_struct(
 
 /*
  * __conf_source_struct_lookup --
- *     Look up a key in the structured args array.
- *     Linear scan - fast enough for typical configs (5-20 keys).
+ *     Look up a key in the structured args array. Linear scan - fast enough for typical configs
+ *     (5-20 keys).
  */
 static int
 __conf_source_struct_lookup(
@@ -71,9 +70,8 @@ __conf_source_struct_lookup(
 
 /*
  * __wt_conf_source_get_int --
- *     Get an integer config value from the source.
- *     Returns 0 on success, WT_NOTFOUND if key not in struct config.
- *     For struct config, caller should use default if WT_NOTFOUND.
+ *     Get an integer config value from the source. Returns 0 on success, WT_NOTFOUND if key not in
+ *     struct config. For struct config, caller should use default if WT_NOTFOUND.
  */
 int
 __wt_conf_source_get_int(WT_SESSION_IMPL *session, WT_CONF_SOURCE *source, uint64_t key_id,
@@ -89,9 +87,8 @@ __wt_conf_source_get_int(WT_SESSION_IMPL *session, WT_CONF_SOURCE *source, uint6
         if (ret == 0) {
             /* Verify type matches expected (int or bool both use v_int) */
             if (arg->type != WT_OPEN_CONFIG_ARG_INT && arg->type != WT_OPEN_CONFIG_ARG_BOOL)
-                WT_RET_MSG(session, EINVAL,
-                  "config key %s: expected int/bool type but got type %d", key_name,
-                  (int)arg->type);
+                WT_RET_MSG(session, EINVAL, "config key %s: expected int/bool type but got type %d",
+                  key_name, (int)arg->type);
             *valuep = arg->value.v_int;
             return (0);
         }
@@ -113,8 +110,8 @@ __wt_conf_source_get_int(WT_SESSION_IMPL *session, WT_CONF_SOURCE *source, uint6
 
 /*
  * __wt_conf_source_get_boolean --
- *     Get a boolean config value from the source.
- *     Returns 0 on success, WT_NOTFOUND if key not in struct config.
+ *     Get a boolean config value from the source. Returns 0 on success, WT_NOTFOUND if key not in
+ *     struct config.
  */
 int
 __wt_conf_source_get_boolean(WT_SESSION_IMPL *session, WT_CONF_SOURCE *source, uint64_t key_id,
@@ -131,8 +128,8 @@ __wt_conf_source_get_boolean(WT_SESSION_IMPL *session, WT_CONF_SOURCE *source, u
 
 /*
  * __wt_conf_source_get_string --
- *     Get a string config value from the source.
- *     Returns 0 on success, WT_NOTFOUND if key not in struct config.
+ *     Get a string config value from the source. Returns 0 on success, WT_NOTFOUND if key not in
+ *     struct config.
  */
 int
 __wt_conf_source_get_string(WT_SESSION_IMPL *session, WT_CONF_SOURCE *source, uint64_t key_id,

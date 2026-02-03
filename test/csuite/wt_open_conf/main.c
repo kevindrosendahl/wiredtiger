@@ -44,11 +44,9 @@ static void
 test_basic_open(void)
 {
     WT_CONNECTION *conn;
-    WT_OPEN_CONFIG_ARG config[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 100 * WT_MEGABYTE),
-        WT_OPEN_CONFIG_ARG_END
-    };
+    WT_OPEN_CONFIG_ARG config[] = {WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 100 * WT_MEGABYTE),
+      WT_OPEN_CONFIG_ARG_END};
 
     printf("Test: basic open with struct config\n");
 
@@ -66,12 +64,10 @@ static void
 test_in_memory(void)
 {
     WT_CONNECTION *conn;
-    WT_OPEN_CONFIG_ARG config[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_in_memory, true),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 50 * WT_MEGABYTE),
-        WT_OPEN_CONFIG_ARG_END
-    };
+    WT_OPEN_CONFIG_ARG config[] = {WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+      WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_in_memory, true),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 50 * WT_MEGABYTE),
+      WT_OPEN_CONFIG_ARG_END};
 
     printf("Test: in_memory mode\n");
 
@@ -90,11 +86,9 @@ test_error_prefix(void)
 {
     WT_CONNECTION *conn;
     const char *prefix = "TEST_PREFIX";
-    WT_OPEN_CONFIG_ARG config[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
-        WT_OPEN_CONFIG_ARG_SET_STR(WT_OPEN_CONF_error_prefix, prefix, strlen(prefix)),
-        WT_OPEN_CONFIG_ARG_END
-    };
+    WT_OPEN_CONFIG_ARG config[] = {WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+      WT_OPEN_CONFIG_ARG_SET_STR(WT_OPEN_CONF_error_prefix, prefix, strlen(prefix)),
+      WT_OPEN_CONFIG_ARG_END};
 
     printf("Test: error_prefix config\n");
 
@@ -113,13 +107,9 @@ test_readonly(void)
 {
     WT_CONNECTION *conn;
     WT_OPEN_CONFIG_ARG create_config[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
-        WT_OPEN_CONFIG_ARG_END
-    };
+      WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true), WT_OPEN_CONFIG_ARG_END};
     WT_OPEN_CONFIG_ARG readonly_config[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_readonly, true),
-        WT_OPEN_CONFIG_ARG_END
-    };
+      WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_readonly, true), WT_OPEN_CONFIG_ARG_END};
 
     printf("Test: readonly mode\n");
 
@@ -142,11 +132,9 @@ static void
 test_invalid_key(void)
 {
     WT_CONNECTION *conn;
-    WT_OPEN_CONFIG_ARG config[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
-        {.key = 999999, .value.v_int = 100, .type = WT_OPEN_CONFIG_ARG_INT}, /* Invalid key */
-        WT_OPEN_CONFIG_ARG_END
-    };
+    WT_OPEN_CONFIG_ARG config[] = {WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+      {.key = 999999, .value.v_int = 100, .type = WT_OPEN_CONFIG_ARG_INT}, /* Invalid key */
+      WT_OPEN_CONFIG_ARG_END};
     int ret;
 
     printf("Test: invalid key returns EINVAL\n");
@@ -170,14 +158,14 @@ test_type_mismatch(void)
     printf("Test: type mismatch returns EINVAL\n");
 
     /*
-     * Pass a string type for cache_size which expects int.
-     * Manually construct the arg to force the type mismatch.
+     * Pass a string type for cache_size which expects int. Manually construct the arg to force the
+     * type mismatch.
      */
-    WT_OPEN_CONFIG_ARG config[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
-        {.key = WT_OPEN_CONF_cache_size, .value.v_str = {.str = "wrong", .len = 5}, .type = WT_OPEN_CONFIG_ARG_STR},
-        WT_OPEN_CONFIG_ARG_END
-    };
+    WT_OPEN_CONFIG_ARG config[] = {WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+      {.key = WT_OPEN_CONF_cache_size,
+        .value.v_str = {.str = "wrong", .len = 5},
+        .type = WT_OPEN_CONFIG_ARG_STR},
+      WT_OPEN_CONFIG_ARG_END};
 
     ret = wiredtiger_open_ex(home, NULL, config, 0, &conn);
     testutil_assert(ret == EINVAL);
@@ -198,12 +186,10 @@ test_duplicate_key(void)
     printf("Test: duplicate key returns EINVAL\n");
 
     /* Pass cache_size twice - should be an error */
-    WT_OPEN_CONFIG_ARG config[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 50 * 1024 * 1024),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 60 * 1024 * 1024), /* Duplicate! */
-        WT_OPEN_CONFIG_ARG_END
-    };
+    WT_OPEN_CONFIG_ARG config[] = {WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 50 * 1024 * 1024),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 60 * 1024 * 1024), /* Duplicate! */
+      WT_OPEN_CONFIG_ARG_END};
 
     ret = wiredtiger_open_ex(home, NULL, config, 0, &conn);
     testutil_assert(ret == EINVAL);
@@ -220,9 +206,7 @@ test_empty_config(void)
 {
     WT_CONNECTION *conn;
     WT_OPEN_CONFIG_ARG config[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
-        WT_OPEN_CONFIG_ARG_END
-    };
+      WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true), WT_OPEN_CONFIG_ARG_END};
 
     printf("Test: empty config (defaults)\n");
 
@@ -241,8 +225,8 @@ test_counted_array(void)
 {
     WT_CONNECTION *conn;
     WT_OPEN_CONFIG_ARG config[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 100 * WT_MEGABYTE),
+      WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 100 * WT_MEGABYTE),
     };
 
     printf("Test: counted array\n");
@@ -261,17 +245,14 @@ static void
 test_eviction_config(void)
 {
     WT_CONNECTION *conn;
-    WT_OPEN_CONFIG_ARG config[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 100 * WT_MEGABYTE),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_eviction_target, 75),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_eviction_trigger, 95),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_eviction_dirty_target, 5),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_eviction_dirty_trigger, 20),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_eviction_threads_min, 2),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_eviction_threads_max, 4),
-        WT_OPEN_CONFIG_ARG_END
-    };
+    WT_OPEN_CONFIG_ARG config[] = {WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 100 * WT_MEGABYTE),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_eviction_target, 75),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_eviction_trigger, 95),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_eviction_dirty_target, 5),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_eviction_dirty_trigger, 20),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_eviction_threads_min, 2),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_eviction_threads_max, 4), WT_OPEN_CONFIG_ARG_END};
 
     printf("Test: eviction configuration (nested keys)\n");
 
@@ -290,14 +271,11 @@ test_log_config(void)
 {
     WT_CONNECTION *conn;
     char log_dir[256];
-    WT_OPEN_CONFIG_ARG config[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 100 * WT_MEGABYTE),
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_log_enabled, true),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_log_file_max, 10 * WT_MEGABYTE),
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_log_prealloc, false),
-        WT_OPEN_CONFIG_ARG_END
-    };
+    WT_OPEN_CONFIG_ARG config[] = {WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 100 * WT_MEGABYTE),
+      WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_log_enabled, true),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_log_file_max, 10 * WT_MEGABYTE),
+      WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_log_prealloc, false), WT_OPEN_CONFIG_ARG_END};
 
     printf("Test: log configuration (nested keys)\n");
 
@@ -319,13 +297,11 @@ static void
 test_checkpoint_config(void)
 {
     WT_CONNECTION *conn;
-    WT_OPEN_CONFIG_ARG config[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 100 * WT_MEGABYTE),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_checkpoint_wait, 60),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_checkpoint_log_size, 2LL * WT_GIGABYTE),
-        WT_OPEN_CONFIG_ARG_END
-    };
+    WT_OPEN_CONFIG_ARG config[] = {WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 100 * WT_MEGABYTE),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_checkpoint_wait, 60),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_checkpoint_log_size, 2LL * WT_GIGABYTE),
+      WT_OPEN_CONFIG_ARG_END};
 
     printf("Test: checkpoint configuration (nested keys)\n");
 
@@ -343,18 +319,15 @@ static void
 test_multiple_options(void)
 {
     WT_CONNECTION *conn;
-    WT_OPEN_CONFIG_ARG config[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 256 * WT_MEGABYTE),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_overhead, 10),
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_mmap, false),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_session_max, 100),
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_cache_cursors, true),
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_checkpoint_sync, true),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_eviction_threads_min, 1),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_eviction_threads_max, 8),
-        WT_OPEN_CONFIG_ARG_END
-    };
+    WT_OPEN_CONFIG_ARG config[] = {WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 256 * WT_MEGABYTE),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_overhead, 10),
+      WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_mmap, false),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_session_max, 100),
+      WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_cache_cursors, true),
+      WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_checkpoint_sync, true),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_eviction_threads_min, 1),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_eviction_threads_max, 8), WT_OPEN_CONFIG_ARG_END};
 
     printf("Test: multiple configuration options\n");
 

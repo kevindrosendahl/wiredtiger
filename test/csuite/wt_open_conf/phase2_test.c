@@ -32,23 +32,21 @@ test_cache_size_applied(void)
     WT_CONNECTION *conn;
     WT_CONNECTION_IMPL *conn_impl;
     uint64_t expected_cache_size;
-    WT_OPEN_CONFIG_ARG config[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 50 * WT_MEGABYTE),
-        WT_OPEN_CONFIG_ARG_END
-    };
+    WT_OPEN_CONFIG_ARG config[] = {WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 50 * WT_MEGABYTE),
+      WT_OPEN_CONFIG_ARG_END};
 
     printf("Test: cache_size value is applied\n");
 
     expected_cache_size = 50 * WT_MEGABYTE;
 
     testutil_check(wiredtiger_open_ex(home, NULL, config, 0, &conn));
-    
+
     conn_impl = (WT_CONNECTION_IMPL *)conn;
-    
+
     /* Verify the cache size was actually set to our value */
     testutil_assert(conn_impl->cache_size == expected_cache_size);
-    
+
     testutil_check(conn->close(conn, NULL));
 
     printf("  PASSED: cache_size = %lu\n", (unsigned long)expected_cache_size);
@@ -64,23 +62,21 @@ test_cache_size_non_default(void)
     WT_CONNECTION *conn;
     WT_CONNECTION_IMPL *conn_impl;
     uint64_t unusual_cache_size;
-    WT_OPEN_CONFIG_ARG config[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 73 * WT_MEGABYTE), /* Unusual value */
-        WT_OPEN_CONFIG_ARG_END
-    };
+    WT_OPEN_CONFIG_ARG config[] = {WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 73 * WT_MEGABYTE), /* Unusual value */
+      WT_OPEN_CONFIG_ARG_END};
 
     printf("Test: non-default cache_size is applied\n");
 
     unusual_cache_size = 73 * WT_MEGABYTE;
 
     testutil_check(wiredtiger_open_ex(home, NULL, config, 0, &conn));
-    
+
     conn_impl = (WT_CONNECTION_IMPL *)conn;
-    
+
     /* This proves we're not just getting default values */
     testutil_assert(conn_impl->cache_size == unusual_cache_size);
-    
+
     testutil_check(conn->close(conn, NULL));
 
     printf("  PASSED: cache_size = %lu (not default)\n", (unsigned long)unusual_cache_size);
@@ -95,21 +91,18 @@ test_in_memory_flag_set(void)
 {
     WT_CONNECTION *conn;
     WT_CONNECTION_IMPL *conn_impl;
-    WT_OPEN_CONFIG_ARG config[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_in_memory, true),
-        WT_OPEN_CONFIG_ARG_END
-    };
+    WT_OPEN_CONFIG_ARG config[] = {WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+      WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_in_memory, true), WT_OPEN_CONFIG_ARG_END};
 
     printf("Test: in_memory flag is set\n");
 
     testutil_check(wiredtiger_open_ex(home, NULL, config, 0, &conn));
-    
+
     conn_impl = (WT_CONNECTION_IMPL *)conn;
-    
+
     /* Verify the in_memory flag was set */
     testutil_assert(F_ISSET(conn_impl, WT_CONN_IN_MEMORY));
-    
+
     testutil_check(conn->close(conn, NULL));
 
     printf("  PASSED: WT_CONN_IN_MEMORY flag is set\n");
@@ -124,21 +117,18 @@ test_in_memory_flag_not_set(void)
 {
     WT_CONNECTION *conn;
     WT_CONNECTION_IMPL *conn_impl;
-    WT_OPEN_CONFIG_ARG config[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_in_memory, false),
-        WT_OPEN_CONFIG_ARG_END
-    };
+    WT_OPEN_CONFIG_ARG config[] = {WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+      WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_in_memory, false), WT_OPEN_CONFIG_ARG_END};
 
     printf("Test: in_memory=false means flag is NOT set\n");
 
     testutil_check(wiredtiger_open_ex(home, NULL, config, 0, &conn));
-    
+
     conn_impl = (WT_CONNECTION_IMPL *)conn;
-    
+
     /* Verify the in_memory flag was NOT set */
     testutil_assert(!F_ISSET(conn_impl, WT_CONN_IN_MEMORY));
-    
+
     testutil_check(conn->close(conn, NULL));
 
     printf("  PASSED: WT_CONN_IN_MEMORY flag is NOT set\n");
@@ -154,24 +144,21 @@ test_session_max_applied(void)
     WT_CONNECTION *conn;
     WT_CONNECTION_IMPL *conn_impl;
     uint32_t expected_session_max;
-    WT_OPEN_CONFIG_ARG config[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_session_max, 150),
-        WT_OPEN_CONFIG_ARG_END
-    };
+    WT_OPEN_CONFIG_ARG config[] = {WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_session_max, 150), WT_OPEN_CONFIG_ARG_END};
 
     printf("Test: session_max value is applied\n");
 
     expected_session_max = 150;
 
     testutil_check(wiredtiger_open_ex(home, NULL, config, 0, &conn));
-    
+
     conn_impl = (WT_CONNECTION_IMPL *)conn;
-    
+
     /* Verify session_max was set (note: internal value may be adjusted) */
     /* The connection adds some internal sessions, so we check it's >= our value */
     testutil_assert(conn_impl->session_array.size >= expected_session_max);
-    
+
     testutil_check(conn->close(conn, NULL));
 
     printf("  PASSED: session_max >= %u\n", expected_session_max);
@@ -188,25 +175,22 @@ test_eviction_target_applied(void)
     WT_CONNECTION_IMPL *conn_impl;
     WT_EVICT *evict;
     double expected_target;
-    WT_OPEN_CONFIG_ARG config[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 100 * WT_MEGABYTE),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_eviction_target, 70),
-        WT_OPEN_CONFIG_ARG_END
-    };
+    WT_OPEN_CONFIG_ARG config[] = {WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 100 * WT_MEGABYTE),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_eviction_target, 70), WT_OPEN_CONFIG_ARG_END};
 
     printf("Test: eviction_target value is applied\n");
 
     expected_target = 70.0;
 
     testutil_check(wiredtiger_open_ex(home, NULL, config, 0, &conn));
-    
+
     conn_impl = (WT_CONNECTION_IMPL *)conn;
     evict = conn_impl->evict;
-    
+
     /* Verify eviction_target was set */
     testutil_assert(double_eq(evict->eviction_target, expected_target));
-    
+
     testutil_check(conn->close(conn, NULL));
 
     printf("  PASSED: eviction_target = %.1f\n", expected_target);
@@ -223,25 +207,22 @@ test_eviction_trigger_applied(void)
     WT_CONNECTION_IMPL *conn_impl;
     WT_EVICT *evict;
     double expected_trigger;
-    WT_OPEN_CONFIG_ARG config[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 100 * WT_MEGABYTE),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_eviction_trigger, 90),
-        WT_OPEN_CONFIG_ARG_END
-    };
+    WT_OPEN_CONFIG_ARG config[] = {WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 100 * WT_MEGABYTE),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_eviction_trigger, 90), WT_OPEN_CONFIG_ARG_END};
 
     printf("Test: eviction_trigger value is applied\n");
 
     expected_trigger = 90.0;
 
     testutil_check(wiredtiger_open_ex(home, NULL, config, 0, &conn));
-    
+
     conn_impl = (WT_CONNECTION_IMPL *)conn;
     evict = conn_impl->evict;
-    
+
     /* Verify eviction_trigger was set */
     testutil_assert(double_eq(evict->eviction_trigger, expected_trigger));
-    
+
     testutil_check(conn->close(conn, NULL));
 
     printf("  PASSED: eviction_trigger = %.1f\n", expected_trigger);
@@ -257,26 +238,23 @@ test_multiple_values_applied(void)
     WT_CONNECTION *conn;
     WT_CONNECTION_IMPL *conn_impl;
     WT_EVICT *evict;
-    WT_OPEN_CONFIG_ARG config[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 64 * WT_MEGABYTE),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_eviction_target, 75),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_eviction_trigger, 95),
-        WT_OPEN_CONFIG_ARG_END
-    };
+    WT_OPEN_CONFIG_ARG config[] = {WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 64 * WT_MEGABYTE),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_eviction_target, 75),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_eviction_trigger, 95), WT_OPEN_CONFIG_ARG_END};
 
     printf("Test: multiple config values applied together\n");
 
     testutil_check(wiredtiger_open_ex(home, NULL, config, 0, &conn));
-    
+
     conn_impl = (WT_CONNECTION_IMPL *)conn;
     evict = conn_impl->evict;
-    
+
     /* Verify all values were set correctly */
     testutil_assert(conn_impl->cache_size == 64 * WT_MEGABYTE);
     testutil_assert(double_eq(evict->eviction_target, 75.0));
     testutil_assert(double_eq(evict->eviction_trigger, 95.0));
-    
+
     testutil_check(conn->close(conn, NULL));
 
     printf("  PASSED: all values applied correctly\n");
@@ -291,23 +269,21 @@ test_struct_config_stored(void)
 {
     WT_CONNECTION *conn;
     WT_CONNECTION_IMPL *conn_impl;
-    WT_OPEN_CONFIG_ARG config[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 100 * WT_MEGABYTE),
-        WT_OPEN_CONFIG_ARG_END
-    };
+    WT_OPEN_CONFIG_ARG config[] = {WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 100 * WT_MEGABYTE),
+      WT_OPEN_CONFIG_ARG_END};
 
     printf("Test: struct config is stored on connection\n");
 
     testutil_check(wiredtiger_open_ex(home, NULL, config, 0, &conn));
-    
+
     conn_impl = (WT_CONNECTION_IMPL *)conn;
-    
+
     /* Verify the conf_source was set and is struct type */
     testutil_assert(conn_impl->conf_source != NULL);
     testutil_assert(conn_impl->conf_source->type == WT_CONF_SOURCE_STRUCT);
     testutil_assert(conn_impl->conf_source->u.structured.args != NULL);
-    
+
     testutil_check(conn->close(conn, NULL));
 
     printf("  PASSED: conf_source stored on connection\n");
@@ -327,35 +303,35 @@ test_read_from_struct_config(void)
     int64_t cache_val;
     bool in_memory_val;
     int ret;
-    WT_OPEN_CONFIG_ARG config[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 77 * WT_MEGABYTE),
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_in_memory, false),
-        WT_OPEN_CONFIG_ARG_END
-    };
+    WT_OPEN_CONFIG_ARG config[] = {WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 77 * WT_MEGABYTE),
+      WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_in_memory, false), WT_OPEN_CONFIG_ARG_END};
 
     printf("Test: read values directly from stored struct config\n");
 
     testutil_check(wiredtiger_open_ex(home, NULL, config, 0, &conn));
-    
+
     conn_impl = (WT_CONNECTION_IMPL *)conn;
     session = conn_impl->default_session;
     source = conn_impl->conf_source;
-    
+
     /* Read cache_size directly from struct config - no string parsing */
-    ret = __wt_conf_source_get_int(session, source, WT_OPEN_CONF_cache_size, "cache_size", NULL, &cache_val);
+    ret = __wt_conf_source_get_int(
+      session, source, WT_OPEN_CONF_cache_size, "cache_size", NULL, &cache_val);
     testutil_assert(ret == 0);
     testutil_assert(cache_val == 77 * WT_MEGABYTE);
-    
+
     /* Read in_memory directly from struct config - no string parsing */
-    ret = __wt_conf_source_get_boolean(session, source, WT_OPEN_CONF_in_memory, "in_memory", NULL, &in_memory_val);
+    ret = __wt_conf_source_get_boolean(
+      session, source, WT_OPEN_CONF_in_memory, "in_memory", NULL, &in_memory_val);
     testutil_assert(ret == 0);
     testutil_assert(in_memory_val == false);
-    
+
     /* Try reading a key that wasn't provided - should return WT_NOTFOUND */
-    ret = __wt_conf_source_get_int(session, source, WT_OPEN_CONF_session_max, "session_max", NULL, &cache_val);
+    ret = __wt_conf_source_get_int(
+      session, source, WT_OPEN_CONF_session_max, "session_max", NULL, &cache_val);
     testutil_assert(ret == WT_NOTFOUND);
-    
+
     testutil_check(conn->close(conn, NULL));
 
     printf("  PASSED: read from struct config bypasses string parsing\n");
@@ -386,11 +362,8 @@ test_comparison_cache_size(void)
     testutil_recreate_dir(home);
 
     /* Open with struct config - same value */
-    WT_OPEN_CONFIG_ARG struct_config[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 67108864),
-        WT_OPEN_CONFIG_ARG_END
-    };
+    WT_OPEN_CONFIG_ARG struct_config[] = {WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 67108864), WT_OPEN_CONFIG_ARG_END};
     testutil_check(wiredtiger_open_ex(home, NULL, struct_config, 0, &conn_struct));
     impl_struct = (WT_CONNECTION_IMPL *)conn_struct;
 
@@ -418,7 +391,8 @@ test_comparison_eviction_targets(void)
 
     /* Open with string config */
     testutil_check(wiredtiger_open(home, NULL,
-      "create,eviction_target=75,eviction_trigger=92,eviction_dirty_target=12,eviction_dirty_trigger=18",
+      "create,eviction_target=75,eviction_trigger=92,eviction_dirty_target=12,eviction_dirty_"
+      "trigger=18",
       &conn_string));
     impl_string = (WT_CONNECTION_IMPL *)conn_string;
     evict_string = impl_string->evict;
@@ -434,14 +408,11 @@ test_comparison_eviction_targets(void)
     testutil_recreate_dir(home);
 
     /* Open with struct config - same values */
-    WT_OPEN_CONFIG_ARG struct_config[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_eviction_target, 75),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_eviction_trigger, 92),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_eviction_dirty_target, 12),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_eviction_dirty_trigger, 18),
-        WT_OPEN_CONFIG_ARG_END
-    };
+    WT_OPEN_CONFIG_ARG struct_config[] = {WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_eviction_target, 75),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_eviction_trigger, 92),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_eviction_dirty_target, 12),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_eviction_dirty_trigger, 18), WT_OPEN_CONFIG_ARG_END};
     testutil_check(wiredtiger_open_ex(home, NULL, struct_config, 0, &conn_struct));
     impl_struct = (WT_CONNECTION_IMPL *)conn_struct;
     evict_struct = impl_struct->evict;
@@ -479,11 +450,8 @@ test_comparison_session_max(void)
     testutil_recreate_dir(home);
 
     /* Open with struct config */
-    WT_OPEN_CONFIG_ARG struct_config[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_session_max, 200),
-        WT_OPEN_CONFIG_ARG_END
-    };
+    WT_OPEN_CONFIG_ARG struct_config[] = {WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_session_max, 200), WT_OPEN_CONFIG_ARG_END};
     testutil_check(wiredtiger_open_ex(home, NULL, struct_config, 0, &conn_struct));
     impl_struct = (WT_CONNECTION_IMPL *)conn_struct;
 
@@ -509,12 +477,10 @@ test_shutdown_no_crash(void)
     printf("Test: shutdown with struct config (no use-after-free)\n");
 
     /* Open with struct config including string values to exercise string cleanup */
-    WT_OPEN_CONFIG_ARG config[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 50 * WT_MEGABYTE),
-        WT_OPEN_CONFIG_ARG_SET_STR(WT_OPEN_CONF_error_prefix, "shutdown_test", 13),
-        WT_OPEN_CONFIG_ARG_END
-    };
+    WT_OPEN_CONFIG_ARG config[] = {WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 50 * WT_MEGABYTE),
+      WT_OPEN_CONFIG_ARG_SET_STR(WT_OPEN_CONF_error_prefix, "shutdown_test", 13),
+      WT_OPEN_CONFIG_ARG_END};
 
     testutil_check(wiredtiger_open_ex(home, NULL, config, 0, &conn));
 
@@ -547,20 +513,14 @@ test_log_recovery_skip_applied(void)
     printf("Test: log.recovery_skip value is applied\n");
 
     /* First create a database with logging enabled */
-    WT_OPEN_CONFIG_ARG config1[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_log_enabled, true),
-        WT_OPEN_CONFIG_ARG_END
-    };
+    WT_OPEN_CONFIG_ARG config1[] = {WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+      WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_log_enabled, true), WT_OPEN_CONFIG_ARG_END};
     testutil_check(wiredtiger_open_ex(home, NULL, config1, 0, &conn));
     testutil_check(conn->close(conn, NULL));
 
     /* Reopen with recovery_skip=true */
-    WT_OPEN_CONFIG_ARG config2[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_log_enabled, true),
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_log_recovery_skip, true),
-        WT_OPEN_CONFIG_ARG_END
-    };
+    WT_OPEN_CONFIG_ARG config2[] = {WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_log_enabled, true),
+      WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_log_recovery_skip, true), WT_OPEN_CONFIG_ARG_END};
     testutil_check(wiredtiger_open_ex(home, NULL, config2, 0, &conn));
     conn_impl = (WT_CONNECTION_IMPL *)conn;
 
@@ -585,16 +545,12 @@ test_statistics_log_wait_applied(void)
     printf("Test: statistics_log.wait value is applied\n");
 
     /*
-     * Open with statistics_log.wait=5 (5 seconds).
-     * Note: statistics is a string type ("all", "fast", etc.) so we use
-     * string config for that, but statistics_log.wait is an integer.
+     * Open with statistics_log.wait=5 (5 seconds). Note: statistics is a string type ("all",
+     * "fast", etc.) so we use string config for that, but statistics_log.wait is an integer.
      */
-    WT_OPEN_CONFIG_ARG config[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
-        WT_OPEN_CONFIG_ARG_SET_STR(WT_OPEN_CONF_statistics, "fast", 4),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_statistics_log_wait, 5),
-        WT_OPEN_CONFIG_ARG_END
-    };
+    WT_OPEN_CONFIG_ARG config[] = {WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+      WT_OPEN_CONFIG_ARG_SET_STR(WT_OPEN_CONF_statistics, "fast", 4),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_statistics_log_wait, 5), WT_OPEN_CONFIG_ARG_END};
 
     expected_usecs = 5 * WT_MILLION;
 
@@ -610,9 +566,8 @@ test_statistics_log_wait_applied(void)
 
 /*
  * test_live_restore_enabled_applied --
- *     Verify live_restore.enabled from struct config is applied.
- *     Note: We can only test that it's recognized, not that live restore works,
- *     since live restore requires special setup.
+ *     Verify live_restore.enabled from struct config is applied. Note: We can only test that it's
+ *     recognized, not that live restore works, since live restore requires special setup.
  */
 static void
 test_live_restore_enabled_applied(void)
@@ -623,22 +578,18 @@ test_live_restore_enabled_applied(void)
     printf("Test: live_restore.enabled value is recognized\n");
 
     /*
-     * Try to enable live_restore - it should fail because
-     * we're not in a proper live restore environment (no source path, etc).
-     * The important thing is that the config is recognized and processed,
-     * not silently ignored.
+     * Try to enable live_restore - it should fail because we're not in a proper live restore
+     * environment (no source path, etc). The important thing is that the config is recognized and
+     * processed, not silently ignored.
      */
-    WT_OPEN_CONFIG_ARG config[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_live_restore_enabled, true),
-        WT_OPEN_CONFIG_ARG_END
-    };
+    WT_OPEN_CONFIG_ARG config[] = {WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+      WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_live_restore_enabled, true), WT_OPEN_CONFIG_ARG_END};
 
     ret = wiredtiger_open_ex(home, NULL, config, 0, &conn);
     /*
-     * This should fail because live_restore.path is not set (source directory).
-     * The error could be ENOENT (no such file or directory) or EINVAL depending
-     * on the platform. Either way, failure means the config was recognized.
+     * This should fail because live_restore.path is not set (source directory). The error could be
+     * ENOENT (no such file or directory) or EINVAL depending on the platform. Either way, failure
+     * means the config was recognized.
      */
     testutil_assert(ret != 0);
 
@@ -658,12 +609,10 @@ test_transaction_sync_enabled_applied(void)
     printf("Test: transaction_sync.enabled value is applied\n");
 
     /* Open with transaction_sync.enabled=true and log enabled */
-    WT_OPEN_CONFIG_ARG config[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_log_enabled, true),
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_transaction_sync_enabled, true),
-        WT_OPEN_CONFIG_ARG_END
-    };
+    WT_OPEN_CONFIG_ARG config[] = {WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+      WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_log_enabled, true),
+      WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_transaction_sync_enabled, true),
+      WT_OPEN_CONFIG_ARG_END};
 
     testutil_check(wiredtiger_open_ex(home, NULL, config, 0, &conn));
     conn_impl = (WT_CONNECTION_IMPL *)conn;
@@ -688,12 +637,10 @@ test_transaction_sync_method_applied(void)
     printf("Test: transaction_sync.method value is applied\n");
 
     /* Open with transaction_sync.method=fsync */
-    WT_OPEN_CONFIG_ARG config[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_log_enabled, true),
-        WT_OPEN_CONFIG_ARG_SET_STR(WT_OPEN_CONF_transaction_sync_method, "fsync", 5),
-        WT_OPEN_CONFIG_ARG_END
-    };
+    WT_OPEN_CONFIG_ARG config[] = {WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+      WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_log_enabled, true),
+      WT_OPEN_CONFIG_ARG_SET_STR(WT_OPEN_CONF_transaction_sync_method, "fsync", 5),
+      WT_OPEN_CONFIG_ARG_END};
 
     testutil_check(wiredtiger_open_ex(home, NULL, config, 0, &conn));
     conn_impl = (WT_CONNECTION_IMPL *)conn;
@@ -707,9 +654,9 @@ test_transaction_sync_method_applied(void)
 
 /*
  * test_disaggregated_role_recognized --
- *     Verify disaggregated.role from struct config is recognized.
- *     Note: We can't fully test disaggregated without a page_log, but we can
- *     test that the role config is read and parsed correctly.
+ *     Verify disaggregated.role from struct config is recognized. Note: We can't fully test
+ *     disaggregated without a page_log, but we can test that the role config is read and parsed
+ *     correctly.
  */
 static void
 test_disaggregated_role_recognized(void)
@@ -719,14 +666,12 @@ test_disaggregated_role_recognized(void)
     printf("Test: disaggregated.role value is recognized\n");
 
     /*
-     * Open with disaggregated.role=leader but no page_log.
-     * The role should be recognized but disaggregated won't be active without a page_log.
+     * Open with disaggregated.role=leader but no page_log. The role should be recognized but
+     * disaggregated won't be active without a page_log.
      */
-    WT_OPEN_CONFIG_ARG config[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
-        WT_OPEN_CONFIG_ARG_SET_STR(WT_OPEN_CONF_disaggregated_role, "leader", 6),
-        WT_OPEN_CONFIG_ARG_END
-    };
+    WT_OPEN_CONFIG_ARG config[] = {WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+      WT_OPEN_CONFIG_ARG_SET_STR(WT_OPEN_CONF_disaggregated_role, "leader", 6),
+      WT_OPEN_CONFIG_ARG_END};
 
     /* This should succeed - disaggregated.role without page_log is valid */
     testutil_check(wiredtiger_open_ex(home, NULL, config, 0, &conn));
@@ -746,11 +691,9 @@ test_disaggregated_role_follower(void)
 
     printf("Test: disaggregated.role=follower value is recognized\n");
 
-    WT_OPEN_CONFIG_ARG config[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
-        WT_OPEN_CONFIG_ARG_SET_STR(WT_OPEN_CONF_disaggregated_role, "follower", 8),
-        WT_OPEN_CONFIG_ARG_END
-    };
+    WT_OPEN_CONFIG_ARG config[] = {WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+      WT_OPEN_CONFIG_ARG_SET_STR(WT_OPEN_CONF_disaggregated_role, "follower", 8),
+      WT_OPEN_CONFIG_ARG_END};
 
     testutil_check(wiredtiger_open_ex(home, NULL, config, 0, &conn));
     testutil_check(conn->close(conn, NULL));
@@ -769,11 +712,9 @@ test_disaggregated_drain_threads_recognized(void)
 
     printf("Test: disaggregated.drain_threads value is recognized\n");
 
-    WT_OPEN_CONFIG_ARG config[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_disaggregated_drain_threads, 4),
-        WT_OPEN_CONFIG_ARG_END
-    };
+    WT_OPEN_CONFIG_ARG config[] = {WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_disaggregated_drain_threads, 4),
+      WT_OPEN_CONFIG_ARG_END};
 
     testutil_check(wiredtiger_open_ex(home, NULL, config, 0, &conn));
     testutil_check(conn->close(conn, NULL));
@@ -793,14 +734,12 @@ test_disaggregated_lose_all_my_data_recognized(void)
     printf("Test: disaggregated.lose_all_my_data value is recognized\n");
 
     /*
-     * Note: Setting lose_all_my_data=true without page_log is valid,
-     * but the flag won't have any effect without disaggregated mode active.
+     * Note: Setting lose_all_my_data=true without page_log is valid, but the flag won't have any
+     * effect without disaggregated mode active.
      */
-    WT_OPEN_CONFIG_ARG config[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_disaggregated_lose_all_my_data, false),
-        WT_OPEN_CONFIG_ARG_END
-    };
+    WT_OPEN_CONFIG_ARG config[] = {WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+      WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_disaggregated_lose_all_my_data, false),
+      WT_OPEN_CONFIG_ARG_END};
 
     testutil_check(wiredtiger_open_ex(home, NULL, config, 0, &conn));
     testutil_check(conn->close(conn, NULL));
@@ -819,11 +758,9 @@ test_disaggregated_local_files_action_recognized(void)
 
     printf("Test: disaggregated.local_files_action value is recognized\n");
 
-    WT_OPEN_CONFIG_ARG config[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
-        WT_OPEN_CONFIG_ARG_SET_STR(WT_OPEN_CONF_disaggregated_local_files_action, "ignore", 6),
-        WT_OPEN_CONFIG_ARG_END
-    };
+    WT_OPEN_CONFIG_ARG config[] = {WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+      WT_OPEN_CONFIG_ARG_SET_STR(WT_OPEN_CONF_disaggregated_local_files_action, "ignore", 6),
+      WT_OPEN_CONFIG_ARG_END};
 
     testutil_check(wiredtiger_open_ex(home, NULL, config, 0, &conn));
     testutil_check(conn->close(conn, NULL));
@@ -842,11 +779,9 @@ test_disaggregated_last_materialized_lsn_recognized(void)
 
     printf("Test: disaggregated.last_materialized_lsn value is recognized\n");
 
-    WT_OPEN_CONFIG_ARG config[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_disaggregated_last_materialized_lsn, 0),
-        WT_OPEN_CONFIG_ARG_END
-    };
+    WT_OPEN_CONFIG_ARG config[] = {WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_disaggregated_last_materialized_lsn, 0),
+      WT_OPEN_CONFIG_ARG_END};
 
     testutil_check(wiredtiger_open_ex(home, NULL, config, 0, &conn));
     testutil_check(conn->close(conn, NULL));
@@ -866,14 +801,12 @@ test_disaggregated_checkpoint_meta_recognized(void)
     printf("Test: disaggregated.checkpoint_meta value is recognized\n");
 
     /*
-     * checkpoint_meta is typically empty on initial connection.
-     * We just verify the config key is recognized.
+     * checkpoint_meta is typically empty on initial connection. We just verify the config key is
+     * recognized.
      */
-    WT_OPEN_CONFIG_ARG config[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
-        WT_OPEN_CONFIG_ARG_SET_STR(WT_OPEN_CONF_disaggregated_checkpoint_meta, "", 0),
-        WT_OPEN_CONFIG_ARG_END
-    };
+    WT_OPEN_CONFIG_ARG config[] = {WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+      WT_OPEN_CONFIG_ARG_SET_STR(WT_OPEN_CONF_disaggregated_checkpoint_meta, "", 0),
+      WT_OPEN_CONFIG_ARG_END};
 
     testutil_check(wiredtiger_open_ex(home, NULL, config, 0, &conn));
     testutil_check(conn->close(conn, NULL));
@@ -883,9 +816,9 @@ test_disaggregated_checkpoint_meta_recognized(void)
 
 /*
  * test_disaggregated_page_log_recognized --
- *     Verify disaggregated.page_log from struct config is recognized.
- *     Note: Setting a non-empty page_log would require a valid page log service,
- *     so we test with empty string which means disaggregated is not active.
+ *     Verify disaggregated.page_log from struct config is recognized. Note: Setting a non-empty
+ *     page_log would require a valid page log service, so we test with empty string which means
+ *     disaggregated is not active.
  */
 static void
 test_disaggregated_page_log_recognized(void)
@@ -894,11 +827,9 @@ test_disaggregated_page_log_recognized(void)
 
     printf("Test: disaggregated.page_log value is recognized\n");
 
-    WT_OPEN_CONFIG_ARG config[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
-        WT_OPEN_CONFIG_ARG_SET_STR(WT_OPEN_CONF_disaggregated_page_log, "", 0),
-        WT_OPEN_CONFIG_ARG_END
-    };
+    WT_OPEN_CONFIG_ARG config[] = {WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+      WT_OPEN_CONFIG_ARG_SET_STR(WT_OPEN_CONF_disaggregated_page_log, "", 0),
+      WT_OPEN_CONFIG_ARG_END};
 
     testutil_check(wiredtiger_open_ex(home, NULL, config, 0, &conn));
     testutil_check(conn->close(conn, NULL));
@@ -917,17 +848,15 @@ test_disaggregated_combined(void)
 
     printf("Test: multiple disaggregated config values together\n");
 
-    WT_OPEN_CONFIG_ARG config[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
-        WT_OPEN_CONFIG_ARG_SET_STR(WT_OPEN_CONF_disaggregated_role, "follower", 8),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_disaggregated_drain_threads, 2),
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_disaggregated_lose_all_my_data, false),
-        WT_OPEN_CONFIG_ARG_SET_STR(WT_OPEN_CONF_disaggregated_local_files_action, "ignore", 6),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_disaggregated_last_materialized_lsn, 0),
-        WT_OPEN_CONFIG_ARG_SET_STR(WT_OPEN_CONF_disaggregated_checkpoint_meta, "", 0),
-        WT_OPEN_CONFIG_ARG_SET_STR(WT_OPEN_CONF_disaggregated_page_log, "", 0),
-        WT_OPEN_CONFIG_ARG_END
-    };
+    WT_OPEN_CONFIG_ARG config[] = {WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+      WT_OPEN_CONFIG_ARG_SET_STR(WT_OPEN_CONF_disaggregated_role, "follower", 8),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_disaggregated_drain_threads, 2),
+      WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_disaggregated_lose_all_my_data, false),
+      WT_OPEN_CONFIG_ARG_SET_STR(WT_OPEN_CONF_disaggregated_local_files_action, "ignore", 6),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_disaggregated_last_materialized_lsn, 0),
+      WT_OPEN_CONFIG_ARG_SET_STR(WT_OPEN_CONF_disaggregated_checkpoint_meta, "", 0),
+      WT_OPEN_CONFIG_ARG_SET_STR(WT_OPEN_CONF_disaggregated_page_log, "", 0),
+      WT_OPEN_CONFIG_ARG_END};
 
     testutil_check(wiredtiger_open_ex(home, NULL, config, 0, &conn));
     testutil_check(conn->close(conn, NULL));

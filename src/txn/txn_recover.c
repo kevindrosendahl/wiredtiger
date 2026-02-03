@@ -29,8 +29,8 @@
  * EXTENDED MARKER: The marker includes max_fileid and hs_exists to skip file ID scanning:
  *     max_fileid: The next file ID to assign (allows skipping metadata scan for file IDs)
  *     hs_exists: Recorded for checksum validation; actual HS presence is verified via
- *                __hs_exists_local for consistency and to handle edge cases like salvage
- *     If these fields are missing (old format), skip_metadata_scanp is set to false
+ *     __hs_exists_local for consistency and to handle edge cases like salvage If these fields are
+ *     missing (old format), skip_metadata_scanp is set to false
  *
  * Returns: true if we can skip recovery (clean shutdown verified) false if we need to run full
  *     recovery. Additionally returns cached max_fileid if the extended marker format is valid.
@@ -1304,8 +1304,7 @@ __wt_txn_recover(WT_SESSION_IMPL *session, const char *cfg[], bool disagg)
                  * ensure base_write_gen is at least this value for correct write generation
                  * tracking.
                  */
-                conn->base_write_gen =
-                  WT_MAX(conn->base_write_gen, conn->ckpt.last_base_write_gen);
+                conn->base_write_gen = WT_MAX(conn->base_write_gen, conn->ckpt.last_base_write_gen);
 
                 /*
                  * Even with the extended marker, scan metadata to clean up any incomplete tables.
@@ -1313,12 +1312,13 @@ __wt_txn_recover(WT_SESSION_IMPL *session, const char *cfg[], bool disagg)
                  * net for edge cases. The incomplete table cleanup does not depend on file ID
                  * tracking.
                  */
-                __recovery_metadata_scan_prefix(&r, "table:", NULL, __metadata_clean_incomplete_table);
+                __recovery_metadata_scan_prefix(
+                  &r, "table:", NULL, __metadata_clean_incomplete_table);
 
                 /*
-                 * Check for history store existence using the standard path for consistency.
-                 * This properly verifies HS metadata and file presence, and handles edge cases
-                 * like salvage mode.
+                 * Check for history store existence using the standard path for consistency. This
+                 * properly verifies HS metadata and file presence, and handles edge cases like
+                 * salvage mode.
                  */
                 WT_ERR(__hs_exists_local(session, metac, cfg, &hs_exists_local));
 

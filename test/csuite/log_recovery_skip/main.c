@@ -805,8 +805,8 @@ write_old_format_marker(const char *home, uint32_t file_num, uint32_t offset, in
      * Compute checksum over the marker data (excluding checksum itself). This matches the old
      * format checksum computation.
      */
-    testutil_snprintf(
-      marker_data, sizeof(marker_data), "file=%u,offset=%u,file_size=%" PRId64, file_num, offset, file_size);
+    testutil_snprintf(marker_data, sizeof(marker_data), "file=%u,offset=%u,file_size=%" PRId64,
+      file_num, offset, file_size);
     checksum = __wt_checksum(marker_data, strlen(marker_data));
 
     testutil_snprintf(marker_value, sizeof(marker_value),
@@ -839,8 +839,8 @@ write_old_format_marker(const char *home, uint32_t file_num, uint32_t offset, in
 
 /*
  * test_old_marker_format_compatibility --
- *     Test that new code correctly handles old marker format (4 fields).
- *     This simulates upgrading from an older WiredTiger version.
+ *     Test that new code correctly handles old marker format (4 fields). This simulates upgrading
+ *     from an older WiredTiger version.
  */
 static void
 test_old_marker_format_compatibility(TEST_OPTS *opts)
@@ -926,8 +926,7 @@ test_old_marker_format_compatibility(TEST_OPTS *opts)
 
     {
         WT_CURSOR *cursor;
-        testutil_check(
-          session->open_cursor(session, "table:after_fallback", NULL, NULL, &cursor));
+        testutil_check(session->open_cursor(session, "table:after_fallback", NULL, NULL, &cursor));
         testutil_check(cursor->next(cursor));
         testutil_check(cursor->close(cursor));
     }

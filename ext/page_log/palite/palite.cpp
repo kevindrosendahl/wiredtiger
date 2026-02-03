@@ -407,8 +407,7 @@ struct Config {
 
         /* Validate synchronous value */
         if (synchronous < 0 || synchronous > 2) {
-            throw std::invalid_argument(
-              "synchronous must be 0 (OFF), 1 (NORMAL), or 2 (FULL)");
+            throw std::invalid_argument("synchronous must be 0 (OFF), 1 (NORMAL), or 2 (FULL)");
         }
     }
 
@@ -832,14 +831,13 @@ class Connection {
     std::vector<sqlite3_stmt *> statements;
 
     /*
-     * Generate configuration statements dynamically based on Config.synchronous.
-     * Called once per connection during initialization.
+     * Generate configuration statements dynamically based on Config.synchronous. Called once per
+     * connection during initialization.
      */
     std::vector<std::string>
     make_config_statements()
     {
-        return {
-          /* Set busy timeout to 10 seconds. */
+        return {/* Set busy timeout to 10 seconds. */
           "PRAGMA busy_timeout = 10000;",
 
           /*
@@ -891,9 +889,9 @@ public:
     configure(const Container &cfg_statements)
     {
         /*
-         * Execute each configuration statement with retries on BUSY/LOCKED errors.
-         * In multi-process scenarios, other processes may hold locks during configuration.
-         * Try each statement for up to 60 seconds with 100ms delays between retries.
+         * Execute each configuration statement with retries on BUSY/LOCKED errors. In multi-process
+         * scenarios, other processes may hold locks during configuration. Try each statement for up
+         * to 60 seconds with 100ms delays between retries.
          */
         const size_t max_retries = 600;
 

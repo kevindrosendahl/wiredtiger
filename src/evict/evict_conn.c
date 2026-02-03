@@ -259,16 +259,16 @@ __wt_evict_config(WT_SESSION_IMPL *session, const char *cfg[], bool reconfig)
 
     {
         int64_t val;
-        WT_RET(__evict_config_get_int(session, conn, cfg,
-          WT_OPEN_CONF_eviction_threads_max, "eviction.threads_max", &val));
+        WT_RET(__evict_config_get_int(
+          session, conn, cfg, WT_OPEN_CONF_eviction_threads_max, "eviction.threads_max", &val));
         WT_ASSERT(session, val > 0);
         evict_threads_max = (uint32_t)val;
     }
 
     {
         int64_t val;
-        WT_RET(__evict_config_get_int(session, conn, cfg,
-          WT_OPEN_CONF_eviction_threads_min, "eviction.threads_min", &val));
+        WT_RET(__evict_config_get_int(
+          session, conn, cfg, WT_OPEN_CONF_eviction_threads_min, "eviction.threads_min", &val));
         WT_ASSERT(session, val > 0);
         evict_threads_min = (uint32_t)val;
     }
@@ -298,8 +298,8 @@ __wt_evict_config(WT_SESSION_IMPL *session, const char *cfg[], bool reconfig)
     /* Retrieve the wait time and convert from milliseconds */
     {
         int64_t val;
-        WT_RET(__evict_config_get_int(session, conn, cfg,
-          WT_OPEN_CONF_cache_max_wait_ms, "cache_max_wait_ms", &val));
+        WT_RET(__evict_config_get_int(
+          session, conn, cfg, WT_OPEN_CONF_cache_max_wait_ms, "cache_max_wait_ms", &val));
         if (val > 1)
             evict->cache_max_wait_us = (uint64_t)(val * WT_THOUSAND);
         else if (val == 1)
@@ -311,8 +311,8 @@ __wt_evict_config(WT_SESSION_IMPL *session, const char *cfg[], bool reconfig)
     /* Retrieve the timeout value and convert from seconds */
     {
         int64_t val;
-        WT_RET(__evict_config_get_int(session, conn, cfg,
-          WT_OPEN_CONF_cache_stuck_timeout_ms, "cache_stuck_timeout_ms", &val));
+        WT_RET(__evict_config_get_int(
+          session, conn, cfg, WT_OPEN_CONF_cache_stuck_timeout_ms, "cache_stuck_timeout_ms", &val));
         evict->cache_stuck_timeout_ms = (uint64_t)val;
     }
 
@@ -335,14 +335,15 @@ __wt_evict_config(WT_SESSION_IMPL *session, const char *cfg[], bool reconfig)
           &cache->cache_eviction_controls.cache_tolerance_for_app_eviction,
           (((uint8_t)tolerance_val / 10) * 10));
 
-        WT_RET(__evict_config_get_int(session, conn, cfg,
-          WT_OPEN_CONF_eviction_incremental_app_eviction, "eviction.incremental_app_eviction",
-          &incremental_val));
+        WT_RET(
+          __evict_config_get_int(session, conn, cfg, WT_OPEN_CONF_eviction_incremental_app_eviction,
+            "eviction.incremental_app_eviction", &incremental_val));
         if (incremental_val != 0)
             F_SET_ATOMIC_32(&(cache->cache_eviction_controls), WT_CACHE_EVICT_INCREMENTAL_APP);
 
-        WT_RET(__evict_config_get_int(session, conn, cfg, WT_OPEN_CONF_eviction_prefer_scrub_eviction,
-          "eviction.prefer_scrub_eviction", &scrub_val));
+        WT_RET(
+          __evict_config_get_int(session, conn, cfg, WT_OPEN_CONF_eviction_prefer_scrub_eviction,
+            "eviction.prefer_scrub_eviction", &scrub_val));
         if (scrub_val != 0)
             F_SET_ATOMIC_32(&(cache->cache_eviction_controls), WT_CACHE_PREFER_SCRUB_EVICTION);
 
@@ -356,7 +357,8 @@ __wt_evict_config(WT_SESSION_IMPL *session, const char *cfg[], bool reconfig)
           WT_OPEN_CONF_eviction_app_eviction_min_cache_fill_ratio,
           "eviction.app_eviction_min_cache_fill_ratio", &fill_ratio_val));
         __wt_atomic_store_uint8_relaxed(
-          &cache->cache_eviction_controls.app_eviction_min_cache_fill_ratio, (uint8_t)fill_ratio_val);
+          &cache->cache_eviction_controls.app_eviction_min_cache_fill_ratio,
+          (uint8_t)fill_ratio_val);
     }
 
     /*
