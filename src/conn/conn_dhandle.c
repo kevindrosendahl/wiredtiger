@@ -20,6 +20,10 @@ __conn_dhandle_config_clear(WT_SESSION_IMPL *session)
 
     dhandle = session->dhandle;
 
+    /* Clear the btree config cache if present */
+    if (dhandle->btree_conf_cache != NULL)
+        __wt_btree_conf_cache_clear(session, dhandle);
+
     if (dhandle->cfg == NULL)
         return;
     for (a = dhandle->cfg; *a != NULL; ++a)

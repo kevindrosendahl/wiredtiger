@@ -421,3 +421,19 @@ define_c_test(
     ARGUMENTS -h $<SHELL_PATH:$<TARGET_FILE_DIR:test_wt_open_conf_comprehensive>/WT_HOME>
     DEPENDS "WT_POSIX"
 )
+
+define_c_test(
+    TARGET test_cursor_config_fast_path
+    SOURCES wt_open_conf/cursor_config_test.c
+    DIR_NAME cursor_config_fast_path
+    ARGUMENTS -h $<SHELL_PATH:$<TARGET_FILE_DIR:test_cursor_config_fast_path>/WT_HOME>
+    DEPENDS "WT_POSIX"
+)
+
+define_c_test(
+    TARGET test_btree_conf_cache
+    SOURCES wt_open_conf/btree_conf_cache_test.c
+    DIR_NAME btree_conf_cache
+    ARGUMENTS -h $<SHELL_PATH:$<TARGET_FILE_DIR:test_btree_conf_cache>/WT_HOME>
+    DEPENDS "WT_POSIX"
+)

@@ -923,6 +923,9 @@ struct __wt_connection_stats {
     int64_t cursor_next_skip_lt_100;
     int64_t cursor_next_skip_ge_100;
     int64_t cursor_next_random_error;
+    int64_t cursor_open_config_slow;
+    int64_t cursor_open_config_fast_null;
+    int64_t cursor_open_config_fast_overwrite;
     int64_t cursor_restart;
     int64_t cursor_prev;
     int64_t cursor_prev_error;
@@ -1418,6 +1421,8 @@ struct __wt_dsrc_stats {
     int64_t btree_compact_pages_reviewed;
     int64_t btree_compact_pages_rewritten;
     int64_t btree_compact_pages_skipped;
+    int64_t btree_conf_cache_hit;
+    int64_t btree_conf_cache_miss;
     int64_t btree_compact_bytes_rewritten_expected;
     int64_t btree_compact_pages_rewritten_expected;
     int64_t btree_checkpoint_pages_reconciled;

@@ -1043,8 +1043,10 @@ __wt_cursor_cache_get(WT_SESSION_IMPL *session, const char *uri, uint64_t hash_v
       (cfg != NULL && cfg[0] != NULL && cfg[1] != NULL && (cfg[2] != NULL || cfg[1][0] != '\0'));
 
     /* Use a null configuration array when applicable for fastest configuration lookups. */
-    if (!have_config)
+    if (!have_config) {
         cfg = NULL;
+        WT_STAT_CONN_INCR(session, cursor_open_config_fast_null);
+    }
 
     /* WT_CURSTD_OVERWRITE: Fast path overwrite configuration */
     if (have_config) {
@@ -1052,6 +1054,7 @@ __wt_cursor_cache_get(WT_SESSION_IMPL *session, const char *uri, uint64_t hash_v
             have_config = false;
             overwrite_flag = 0;
             cfg = NULL;
+            WT_STAT_CONN_INCR(session, cursor_open_config_fast_overwrite);
         } else {
             WT_RET(__wt_config_gets_def(session, cfg, "overwrite", 1, &cval));
             overwrite_flag = (cval.val != 0) ? WT_CURSTD_OVERWRITE : 0;
@@ -1060,6 +1063,7 @@ __wt_cursor_cache_get(WT_SESSION_IMPL *session, const char *uri, uint64_t hash_v
         overwrite_flag = WT_CURSTD_OVERWRITE;
 
     if (have_config) {
+        WT_STAT_CONN_INCR(session, cursor_open_config_slow);
         WT_RET(__cursors_can_be_cached(session, cfg, &cacheable));
         if (!cacheable)
             return (WT_NOTFOUND);

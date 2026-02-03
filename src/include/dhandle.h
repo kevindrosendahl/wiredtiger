@@ -145,6 +145,13 @@ struct __wt_data_handle {
     WT_DATA_SOURCE *dsrc; /* Data source for this handle */
     void *handle;         /* Generic handle */
 
+    /*
+     * Cached btree configuration. Populated on first open from metadata
+     * string, used by all subsequent opens. Protected by dhandle rwlock
+     * (write lock needed to populate, read lock sufficient to use).
+     */
+    WT_BTREE_CONF *btree_conf_cache;
+
     wt_shared enum wt_dhandle_type type;
 
 #define WT_DHANDLE_BTREE(dhandle)                                                \

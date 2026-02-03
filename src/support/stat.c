@@ -30,6 +30,8 @@ static const char *const __stats_dsrc_desc[] = {
   "btree: btree compact pages reviewed",
   "btree: btree compact pages rewritten",
   "btree: btree compact pages skipped",
+  "btree: btree config cache hit",
+  "btree: btree config cache miss",
   "btree: btree expected number of compact bytes rewritten",
   "btree: btree expected number of compact pages rewritten",
   "btree: btree number of pages reconciled during checkpoint",
@@ -477,6 +479,8 @@ __wt_stat_dsrc_clear_single(WT_DSRC_STATS *stats)
     /* not clearing btree_compact_pages_reviewed */
     /* not clearing btree_compact_pages_rewritten */
     /* not clearing btree_compact_pages_skipped */
+    stats->btree_conf_cache_hit = 0;
+    stats->btree_conf_cache_miss = 0;
     /* not clearing btree_compact_bytes_rewritten_expected */
     /* not clearing btree_compact_pages_rewritten_expected */
     /* not clearing btree_checkpoint_pages_reconciled */
@@ -878,6 +882,8 @@ __wt_stat_dsrc_aggregate_single(WT_DSRC_STATS *from, WT_DSRC_STATS *to)
     to->btree_compact_pages_reviewed += from->btree_compact_pages_reviewed;
     to->btree_compact_pages_rewritten += from->btree_compact_pages_rewritten;
     to->btree_compact_pages_skipped += from->btree_compact_pages_skipped;
+    to->btree_conf_cache_hit += from->btree_conf_cache_hit;
+    to->btree_conf_cache_miss += from->btree_conf_cache_miss;
     to->btree_compact_bytes_rewritten_expected += from->btree_compact_bytes_rewritten_expected;
     to->btree_compact_pages_rewritten_expected += from->btree_compact_pages_rewritten_expected;
     to->btree_checkpoint_pages_reconciled += from->btree_checkpoint_pages_reconciled;
@@ -1307,6 +1313,8 @@ __wt_stat_dsrc_aggregate(WT_DSRC_STATS **from, WT_DSRC_STATS *to)
     to->btree_compact_pages_reviewed += WT_STAT_DSRC_READ(from, btree_compact_pages_reviewed);
     to->btree_compact_pages_rewritten += WT_STAT_DSRC_READ(from, btree_compact_pages_rewritten);
     to->btree_compact_pages_skipped += WT_STAT_DSRC_READ(from, btree_compact_pages_skipped);
+    to->btree_conf_cache_hit += WT_STAT_DSRC_READ(from, btree_conf_cache_hit);
+    to->btree_conf_cache_miss += WT_STAT_DSRC_READ(from, btree_conf_cache_miss);
     to->btree_compact_bytes_rewritten_expected +=
       WT_STAT_DSRC_READ(from, btree_compact_bytes_rewritten_expected);
     to->btree_compact_pages_rewritten_expected +=
@@ -2293,6 +2301,9 @@ static const char *const __stats_connection_desc[] = {
   "cursor: cursor next calls that skip greater than 1 and fewer than 100 entries",
   "cursor: cursor next calls that skip greater than or equal to 100 entries",
   "cursor: cursor next random calls that return an error",
+  "cursor: cursor open requiring full config parse",
+  "cursor: cursor open with NULL/empty config (fast path)",
+  "cursor: cursor open with overwrite=false (fast path)",
   "cursor: cursor operation restarted",
   "cursor: cursor prev calls",
   "cursor: cursor prev calls that return an error",
@@ -3305,6 +3316,9 @@ __wt_stat_connection_clear_single(WT_CONNECTION_STATS *stats)
     stats->cursor_next_skip_lt_100 = 0;
     stats->cursor_next_skip_ge_100 = 0;
     stats->cursor_next_random_error = 0;
+    stats->cursor_open_config_slow = 0;
+    stats->cursor_open_config_fast_null = 0;
+    stats->cursor_open_config_fast_overwrite = 0;
     stats->cursor_restart = 0;
     stats->cursor_prev = 0;
     stats->cursor_prev_error = 0;
@@ -4421,6 +4435,10 @@ __wt_stat_connection_aggregate(WT_CONNECTION_STATS **from, WT_CONNECTION_STATS *
     to->cursor_next_skip_lt_100 += WT_STAT_CONN_READ(from, cursor_next_skip_lt_100);
     to->cursor_next_skip_ge_100 += WT_STAT_CONN_READ(from, cursor_next_skip_ge_100);
     to->cursor_next_random_error += WT_STAT_CONN_READ(from, cursor_next_random_error);
+    to->cursor_open_config_slow += WT_STAT_CONN_READ(from, cursor_open_config_slow);
+    to->cursor_open_config_fast_null += WT_STAT_CONN_READ(from, cursor_open_config_fast_null);
+    to->cursor_open_config_fast_overwrite +=
+      WT_STAT_CONN_READ(from, cursor_open_config_fast_overwrite);
     to->cursor_restart += WT_STAT_CONN_READ(from, cursor_restart);
     to->cursor_prev += WT_STAT_CONN_READ(from, cursor_prev);
     to->cursor_prev_error += WT_STAT_CONN_READ(from, cursor_prev_error);

@@ -255,6 +255,7 @@ extern int __wt_btcur_search_prepared(WT_CURSOR *cursor, WT_UPDATE **updp)
 extern int __wt_btcur_update(WT_CURSOR_BTREE *cbt) WT_GCC_FUNC_DECL_ATTRIBUTE((warn_unused_result));
 extern int __wt_btree_close(WT_SESSION_IMPL *session)
   WT_GCC_FUNC_DECL_ATTRIBUTE((warn_unused_result));
+extern void __wt_btree_conf_cache_clear(WT_SESSION_IMPL *session, WT_DATA_HANDLE *dhandle);
 extern int __wt_btree_config_encryptor(WT_SESSION_IMPL *session, const char **cfg,
   WT_KEYED_ENCRYPTOR **kencryptorp) WT_GCC_FUNC_DECL_ATTRIBUTE((warn_unused_result));
 extern int __wt_btree_discard(WT_SESSION_IMPL *session)

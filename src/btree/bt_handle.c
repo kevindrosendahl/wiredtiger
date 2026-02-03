@@ -477,110 +477,360 @@ __btree_setup_page_log(WT_SESSION_IMPL *session, WT_BTREE *btree)
 }
 
 /*
- * __btree_conf --
- *     Configure a WT_BTREE structure.
+ * __btree_conf_cache_free --
+ *     Free btree configuration cache.
+ */
+static void
+__btree_conf_cache_free(WT_SESSION_IMPL *session, WT_BTREE_CONF *conf)
+{
+    if (conf == NULL)
+        return;
+
+    __wt_free(session, conf->key_format);
+    __wt_free(session, conf->value_format);
+    __wt_free(session, conf->collator_name);
+    __wt_free(session, conf->compressor_name);
+    __wt_free(session, conf);
+}
+
+/*
+ * __btree_conf_cache_populate --
+ *     Parse btree configuration from metadata string and cache it on the dhandle.
+ *     Called once per dhandle lifetime under exclusive lock.
  */
 static int
-__btree_conf(WT_SESSION_IMPL *session, WT_CKPT *ckpt, bool is_ckpt)
+__btree_conf_cache_populate(WT_SESSION_IMPL *session, WT_DATA_HANDLE *dhandle, const char *cfg[])
 {
-    WT_BTREE *btree;
+    WT_BTREE_CONF *conf;
+    WT_CONFIG_ITEM cval;
+    WT_DECL_RET;
+
+    WT_ASSERT(session, dhandle->btree_conf_cache == NULL || !dhandle->btree_conf_cache->parsed);
+
+    WT_RET(__wt_calloc_one(session, &conf));
+
+    /* String options - must duplicate since metadata may be freed */
+    WT_ERR(__wt_config_gets(session, cfg, "key_format", &cval));
+    WT_ERR(__wt_strndup(session, cval.str, cval.len, &conf->key_format));
+
+    WT_ERR(__wt_config_gets(session, cfg, "value_format", &cval));
+    WT_ERR(__wt_strndup(session, cval.str, cval.len, &conf->value_format));
+
+    /* Optional collator name */
+    WT_ERR(__wt_config_gets_none(session, cfg, "collator", &cval));
+    if (cval.len != 0)
+        WT_ERR(__wt_strndup(session, cval.str, cval.len, &conf->collator_name));
+
+    /* Optional compressor name */
+    WT_ERR(__wt_config_gets_none(session, cfg, "block_compressor", &cval));
+    if (cval.len != 0)
+        WT_ERR(__wt_strndup(session, cval.str, cval.len, &conf->compressor_name));
+
+    /* Integer options */
+    WT_ERR(__wt_config_gets(session, cfg, "id", &cval));
+    conf->id = (uint32_t)cval.val;
+
+    WT_ERR(__wt_config_gets(session, cfg, "allocation_size", &cval));
+    conf->allocsize = (uint32_t)cval.val;
+
+    WT_ERR(__wt_config_gets(session, cfg, "internal_page_max", &cval));
+    conf->maxintlpage = (uint32_t)cval.val;
+
+    WT_ERR(__wt_config_gets(session, cfg, "leaf_page_max", &cval));
+    conf->maxleafpage = (uint32_t)cval.val;
+
+    WT_ERR(__wt_config_gets(session, cfg, "memory_page_image_max", &cval));
+    conf->maxmempage_image = (uint32_t)cval.val;
+
+    WT_ERR(__wt_config_gets(session, cfg, "split_pct", &cval));
+    conf->split_pct = (int)cval.val;
+
+    WT_ERR(__wt_config_gets(session, cfg, "split_deepen_min_child", &cval));
+    conf->split_deepen_min_child = (u_int)cval.val;
+
+    WT_ERR(__wt_config_gets(session, cfg, "split_deepen_per_child", &cval));
+    conf->split_deepen_per_child = (u_int)cval.val;
+
+    WT_ERR(__wt_config_gets(session, cfg, "dictionary", &cval));
+    conf->dictionary = (u_int)cval.val;
+
+    WT_ERR(__wt_config_gets(session, cfg, "prefix_compression_min", &cval));
+    conf->prefix_compression_min = (u_int)cval.val;
+
+    /* Fixed-length column store field size */
+    WT_ERR(__wt_config_gets(session, cfg, "value_format", &cval));
+    if (WT_CONFIG_LIT_MATCH("r", cval) || cval.len == 0 || cval.str[0] != 't')
+        conf->bitcnt = 0;
+    else {
+        WT_ERR(__wt_config_gets(session, cfg, "bitcnt", &cval));
+        conf->bitcnt = (uint8_t)cval.val;
+    }
+
+    /* Checksum mode */
+    WT_ERR(__wt_config_gets(session, cfg, "checksum", &cval));
+    if (WT_CONFIG_LIT_MATCH("on", cval))
+        conf->checksum = CKSUM_ON;
+    else if (WT_CONFIG_LIT_MATCH("off", cval))
+        conf->checksum = CKSUM_OFF;
+    else if (WT_CONFIG_LIT_MATCH("uncompressed", cval))
+        conf->checksum = CKSUM_UNCOMPRESSED;
+    else
+        conf->checksum = CKSUM_UNENCRYPTED;
+
+    /* Tiered storage timestamps (optional) */
+    conf->flush_most_recent_secs = 0;
+    ret = __wt_config_gets(session, cfg, "flush_time", &cval);
+    if (ret == 0)
+        conf->flush_most_recent_secs = (uint64_t)cval.val;
+    else
+        WT_ERR_NOTFOUND_OK(ret, false);
+
+    conf->flush_most_recent_ts = 0;
+    ret = __wt_config_gets(session, cfg, "flush_timestamp", &cval);
+    if (ret == 0 && cval.len != 0) {
+        wt_timestamp_t ts;
+        WT_ERR(__wt_txn_parse_timestamp_raw(session, "flush timestamp", &ts, &cval));
+        conf->flush_most_recent_ts = ts;
+    } else
+        WT_ERR_NOTFOUND_OK(ret, false);
+
+    /* Boolean flags */
+    WT_ERR(__wt_config_gets(session, cfg, "cache_resident", &cval));
+    if (cval.val)
+        FLD_SET(conf->flags, WT_BTREE_CONF_CACHE_RESIDENT);
+
+    WT_ERR(__wt_config_gets(session, cfg, "ignore_in_memory_cache_size", &cval));
+    if (cval.val)
+        FLD_SET(conf->flags, WT_BTREE_CONF_IGNORE_CACHE_SIZE);
+
+    WT_ERR(__wt_config_gets(session, cfg, "in_memory", &cval));
+    if (cval.val)
+        FLD_SET(conf->flags, WT_BTREE_CONF_IN_MEMORY);
+
+    WT_ERR(__wt_config_gets(session, cfg, "log.enabled", &cval));
+    if (cval.val)
+        FLD_SET(conf->flags, WT_BTREE_CONF_LOG_ENABLED);
+
+    WT_ERR(__wt_config_gets(session, cfg, "internal_key_truncate", &cval));
+    if (cval.val)
+        FLD_SET(conf->flags, WT_BTREE_CONF_INTERNAL_KEY_TRUNCATE);
+
+    WT_ERR(__wt_config_gets(session, cfg, "prefix_compression", &cval));
+    if (cval.val)
+        FLD_SET(conf->flags, WT_BTREE_CONF_PREFIX_COMPRESSION);
+
+    WT_ERR(__wt_config_gets(session, cfg, "readonly", &cval));
+    if (cval.val)
+        FLD_SET(conf->flags, WT_BTREE_CONF_READONLY);
+
+    /* Mark as successfully parsed and install on dhandle */
+    conf->parsed = true;
+
+    /* Free any existing invalid cache before installing new one */
+    if (dhandle->btree_conf_cache != NULL)
+        __btree_conf_cache_free(session, dhandle->btree_conf_cache);
+
+    dhandle->btree_conf_cache = conf;
+    return (0);
+
+err:
+    __btree_conf_cache_free(session, conf);
+    return (ret);
+}
+
+/*
+ * __btree_conf_from_cache --
+ *     Apply cached configuration to btree handle.
+ */
+static int
+__btree_conf_from_cache(WT_SESSION_IMPL *session, WT_BTREE *btree, WT_BTREE_CONF *conf)
+{
     WT_CONFIG_ITEM cval, metadata;
     WT_CONNECTION_IMPL *conn;
     WT_DECL_RET;
-    int64_t maj_version, min_version;
-    const char **cfg;
 
-    btree = S2BT(session);
-    cfg = btree->dhandle->cfg;
+    WT_ASSERT(session, conf != NULL && conf->parsed);
     conn = S2C(session);
 
-    /* Dump out format information. */
-    if (WT_VERBOSE_ISSET(session, WT_VERB_VERSION)) {
-        WT_RET(__wt_config_gets(session, cfg, "version.major", &cval));
-        maj_version = cval.val;
-        WT_RET(__wt_config_gets(session, cfg, "version.minor", &cval));
-        min_version = cval.val;
-        __wt_verbose(session, WT_VERB_VERSION, "btree version: %" PRId64 ".%" PRId64, maj_version,
-          min_version);
-    }
+    /*
+     * String values - ALWAYS COPY to btree.
+     * Design rationale: __btree_clear() frees btree->key_format etc.
+     * If we shared pointers with the cache, we'd have dual-ownership
+     * and risk double-free. Copying is simpler and safer.
+     */
+    WT_ERR(__wt_strdup(session, conf->key_format, &btree->key_format));
+    WT_ERR(__wt_strdup(session, conf->value_format, &btree->value_format));
 
-    /* Get the file ID. */
-    WT_RET(__wt_config_gets(session, cfg, "id", &cval));
-    btree->id = (uint32_t)cval.val;
-
-    /* Validate file types and check the data format plan. */
-    WT_RET(__wt_config_gets(session, cfg, "key_format", &cval));
-    WT_RET(__wt_struct_confchk(session, &cval));
-    if (WT_CONFIG_LIT_MATCH("r", cval))
+    /* Derive btree type from key_format */
+    if (conf->key_format[0] == 'r')
         btree->type = BTREE_COL_VAR;
     else
         btree->type = BTREE_ROW;
-    WT_RET(__wt_strndup(session, cval.str, cval.len, &btree->key_format));
 
-    WT_RET(__wt_config_gets(session, cfg, "value_format", &cval));
-    WT_RET(__wt_struct_confchk(session, &cval));
-    WT_RET(__wt_strndup(session, cval.str, cval.len, &btree->value_format));
+    /* Integer values - direct copy */
+    btree->id = conf->id;
+    btree->allocsize = conf->allocsize;
+    btree->maxintlpage = conf->maxintlpage;
+    btree->maxleafpage = conf->maxleafpage;
+    btree->maxmempage_image = conf->maxmempage_image;
+    btree->split_pct = conf->split_pct;
+    btree->split_deepen_min_child = conf->split_deepen_min_child;
+    btree->split_deepen_per_child = conf->split_deepen_per_child;
+    btree->dictionary = conf->dictionary;
+    btree->prefix_compression_min = conf->prefix_compression_min;
+    btree->bitcnt = conf->bitcnt;
+    btree->checksum = conf->checksum;
+    btree->flush_most_recent_secs = conf->flush_most_recent_secs;
+    btree->flush_most_recent_ts = conf->flush_most_recent_ts;
 
-    /* Row-store key comparison. */
-    if (btree->type == BTREE_ROW) {
-        WT_RET(__wt_config_gets_none(session, cfg, "collator", &cval));
-        if (cval.len != 0) {
-            WT_RET(__wt_config_gets(session, cfg, "app_metadata", &metadata));
-            WT_RET(__wt_collator_config(session, btree->dhandle->name, &cval, &metadata,
-              &btree->collator, &btree->collator_owned));
-        }
-    }
-
-    /*
-     * This option turns off eviction for a tree. Therefore, its memory footprint can only grow. But
-     * checkpoint will still visit it to persist the data.
-     */
-    WT_RET(__wt_config_gets(session, cfg, "cache_resident", &cval));
-    if (cval.val)
+    /* Boolean flags */
+    if (FLD_ISSET(conf->flags, WT_BTREE_CONF_CACHE_RESIDENT))
         F_SET(btree, WT_BTREE_NO_EVICT);
     else
         F_CLR(btree, WT_BTREE_NO_EVICT);
 
-    WT_RET(__wt_config_gets(session, cfg, "ignore_in_memory_cache_size", &cval));
-    if (cval.val) {
+    if (FLD_ISSET(conf->flags, WT_BTREE_CONF_IGNORE_CACHE_SIZE)) {
         if (!F_ISSET(conn, WT_CONN_IN_MEMORY))
-            WT_RET_MSG(session, EINVAL,
+            WT_ERR_MSG(session, EINVAL,
               "ignore_in_memory_cache_size setting is only valid with databases configured to run "
               "in-memory");
         F_SET(btree, WT_BTREE_IGNORE_CACHE);
     } else
         F_CLR(btree, WT_BTREE_IGNORE_CACHE);
 
-    /*
-     * Turn on logging when it's enabled in the database and not disabled for the tree. Timestamp
-     * behavior is described by the logging configurations for historical reasons; logged objects
-     * imply commit-level durability and ignored timestamps, not-logged objects imply checkpoint-
-     * level durability and supported timestamps. In-memory configurations default to ignoring all
-     * timestamps, and the application uses the logging configuration flag to turn on timestamps.
-     */
-    if (F_ISSET(&conn->log_mgr, WT_LOG_ENABLED)) {
-        WT_RET(__wt_config_gets(session, cfg, "log.enabled", &cval));
-        if (cval.val)
-            F_SET(btree, WT_BTREE_LOGGED);
-    }
-
-    /*
-     * This option allows the tree to be reconciled by eviction. But we only replace the disk image
-     * in memory to reduce the memory footprint and nothing is written to disk and no data is moved
-     * to the history store. Checkpoint will also skip this tree.
-     */
-    WT_RET(__wt_config_gets(session, cfg, "in_memory", &cval));
-    if (cval.val)
+    if (FLD_ISSET(conf->flags, WT_BTREE_CONF_IN_MEMORY))
         F_SET(btree, WT_BTREE_IN_MEMORY);
     else
         F_CLR(btree, WT_BTREE_IN_MEMORY);
 
+    /* Handle logging based on connection and btree flags */
+    if (F_ISSET(&conn->log_mgr, WT_LOG_ENABLED) && FLD_ISSET(conf->flags, WT_BTREE_CONF_LOG_ENABLED))
+        F_SET(btree, WT_BTREE_LOGGED);
+
     if (F_ISSET(conn, WT_CONN_IN_MEMORY) || F_ISSET(btree, WT_BTREE_IN_MEMORY)) {
         F_SET(btree, WT_BTREE_LOGGED);
-        WT_RET(__wt_config_gets(session, cfg, "log.enabled", &cval));
-        if (!cval.val)
+        if (!FLD_ISSET(conf->flags, WT_BTREE_CONF_LOG_ENABLED))
             F_CLR(btree, WT_BTREE_LOGGED);
     }
+
+    /* Row-store specific settings */
+    if (btree->type == BTREE_ROW) {
+        btree->internal_key_truncate = FLD_ISSET(conf->flags, WT_BTREE_CONF_INTERNAL_KEY_TRUNCATE);
+        btree->prefix_compression = FLD_ISSET(conf->flags, WT_BTREE_CONF_PREFIX_COMPRESSION);
+    }
+
+    if (FLD_ISSET(conf->flags, WT_BTREE_CONF_READONLY))
+        F_SET(btree, WT_BTREE_READONLY);
+
+    /* Compressor lookup using cached name */
+    if (conf->compressor_name != NULL && conf->compressor_name[0] != '\0') {
+        cval.str = conf->compressor_name;
+        cval.len = strlen(conf->compressor_name);
+        WT_ERR(__wt_compressor_config(session, &cval, &btree->compressor));
+    }
+
+    /* Encryptor - must use dhandle->cfg since it needs multiple config keys */
+    WT_ERR(__wt_btree_config_encryptor(session, btree->dhandle->cfg, &btree->kencryptor));
+
+    /* Collator lookup using cached name */
+    if (conf->collator_name != NULL && conf->collator_name[0] != '\0') {
+        cval.str = conf->collator_name;
+        cval.len = strlen(conf->collator_name);
+
+        /* Must read app_metadata from config for collator init */
+        WT_ERR(__wt_config_gets(session, btree->dhandle->cfg, "app_metadata", &metadata));
+        WT_ERR(__wt_collator_config(
+          session, btree->dhandle->name, &cval, &metadata, &btree->collator, &btree->collator_owned));
+    }
+
+    return (0);
+
+err:
+    __wt_free(session, btree->key_format);
+    __wt_free(session, btree->value_format);
+    btree->key_format = NULL;
+    btree->value_format = NULL;
+    return (ret);
+}
+
+/*
+ * __wt_btree_conf_cache_clear --
+ *     Clear btree configuration cache on a dhandle.
+ */
+void
+__wt_btree_conf_cache_clear(WT_SESSION_IMPL *session, WT_DATA_HANDLE *dhandle)
+{
+    if (dhandle->btree_conf_cache != NULL) {
+        __btree_conf_cache_free(session, dhandle->btree_conf_cache);
+        dhandle->btree_conf_cache = NULL;
+    }
+}
+
+/*
+ * __btree_conf --
+ *     Configure a WT_BTREE structure. Uses cached config if available.
+ */
+static int
+__btree_conf(WT_SESSION_IMPL *session, WT_CKPT *ckpt, bool is_ckpt)
+{
+    WT_BTREE *btree;
+    WT_CONFIG_ITEM cval;
+    WT_CONNECTION_IMPL *conn;
+    WT_DATA_HANDLE *dhandle;
+    WT_DECL_RET;
+    int64_t maj_version, min_version;
+    const char **cfg;
+    bool use_cache;
+
+    btree = S2BT(session);
+    dhandle = btree->dhandle;
+    cfg = dhandle->cfg;
+    conn = S2C(session);
+
+    /*
+     * Check if we can use the cached config. The cache is populated on
+     * first open and reused for subsequent opens.
+     */
+    use_cache = (dhandle->btree_conf_cache != NULL && dhandle->btree_conf_cache->parsed);
+
+    if (use_cache) {
+        WT_STAT_DSRC_INCR(session, btree_conf_cache_hit);
+        WT_RET(__btree_conf_from_cache(session, btree, dhandle->btree_conf_cache));
+    } else {
+        WT_STAT_DSRC_INCR(session, btree_conf_cache_miss);
+
+        /*
+         * Cache population requires exclusive access to the dhandle.
+         * This should always be true since we're called from __wt_btree_open()
+         * which is called from __wt_conn_dhandle_open() with exclusive lock.
+         */
+        WT_ASSERT(session, F_ISSET(dhandle, WT_DHANDLE_EXCLUSIVE));
+
+        /* Dump out format information. */
+        if (WT_VERBOSE_ISSET(session, WT_VERB_VERSION)) {
+            WT_RET(__wt_config_gets(session, cfg, "version.major", &cval));
+            maj_version = cval.val;
+            WT_RET(__wt_config_gets(session, cfg, "version.minor", &cval));
+            min_version = cval.val;
+            __wt_verbose(session, WT_VERB_VERSION, "btree version: %" PRId64 ".%" PRId64,
+              maj_version, min_version);
+        }
+
+        /* Populate cache and load from it */
+        WT_RET(__btree_conf_cache_populate(session, dhandle, cfg));
+        WT_RET(__btree_conf_from_cache(session, btree, dhandle->btree_conf_cache));
+    }
+
+    /*
+     * Format validation - run even when loading from cache.
+     * This validates the key/value formats are structurally correct.
+     */
+    cval.str = btree->key_format;
+    cval.len = strlen(btree->key_format);
+    WT_RET(__wt_struct_confchk(session, &cval));
+    cval.str = btree->value_format;
+    cval.len = strlen(btree->value_format);
+    WT_RET(__wt_struct_confchk(session, &cval));
 
     /*
      * The metadata isn't blocked by in-memory cache limits because metadata "unroll" is performed
@@ -605,6 +855,7 @@ __btree_conf(WT_SESSION_IMPL *session, WT_CKPT *ckpt, bool is_ckpt)
         F_CLR(btree, WT_BTREE_LOGGED);
     }
 
+    /* tiered_object config - still need to parse since it affects checkpointing */
     WT_RET(__wt_config_gets(session, cfg, "tiered_object", &cval));
     if (cval.val)
         F_SET(btree, WT_BTREE_NO_CHECKPOINT);
@@ -631,84 +882,23 @@ __btree_conf(WT_SESSION_IMPL *session, WT_CKPT *ckpt, bool is_ckpt)
         }
     }
 
-    /* Page sizes */
+    /*
+     * Page sizes - MUST be computed every time, not cached.
+     * This handles runtime-adjusted values including maxmempage,
+     * splitmempage, maxleafkey, maxleafvalue.
+     */
     WT_RET(__btree_page_sizes(session));
 
-    /* Get the last flush times for tiered storage, if applicable. */
-    btree->flush_most_recent_secs = 0;
-    ret = __wt_config_gets(session, cfg, "flush_time", &cval);
-    WT_RET_NOTFOUND_OK(ret);
-    if (ret == 0)
-        btree->flush_most_recent_secs = (uint64_t)cval.val;
-
-    btree->flush_most_recent_ts = 0;
-    ret = __wt_config_gets(session, cfg, "flush_timestamp", &cval);
-    WT_RET_NOTFOUND_OK(ret);
-    if (ret == 0 && cval.len != 0)
-        WT_RET(__wt_txn_parse_timestamp_raw(
-          session, "flush timestamp", &btree->flush_most_recent_ts, &cval));
-
-    /* Checksums */
-    WT_RET(__wt_config_gets(session, cfg, "checksum", &cval));
-    if (WT_CONFIG_LIT_MATCH("on", cval))
-        btree->checksum = CKSUM_ON;
-    else if (WT_CONFIG_LIT_MATCH("off", cval))
-        btree->checksum = CKSUM_OFF;
-    else if (WT_CONFIG_LIT_MATCH("uncompressed", cval))
-        btree->checksum = CKSUM_UNCOMPRESSED;
-    else
-        btree->checksum = CKSUM_UNENCRYPTED;
-
-    ret = __wt_config_gets(session, cfg, "huffman_value", &cval);
-    if (ret == 0 && cval.len != 0)
-        WT_RET_MSG(session, ENOTSUP, "Huffman encoding for values is no longer supported.");
-
     /*
-     * Reconciliation configuration:
-     *	Block compression (all)
-     *	Dictionary compression (variable-length column-store, row-store)
-     *	Page-split percentage
-     *	Prefix compression (row-store)
-     *	Suffix compression (row-store)
-     */
-    switch (btree->type) {
-    case BTREE_ROW:
-        WT_RET(__wt_config_gets(session, cfg, "internal_key_truncate", &cval));
-        btree->internal_key_truncate = cval.val != 0;
-
-        WT_RET(__wt_config_gets(session, cfg, "prefix_compression", &cval));
-        btree->prefix_compression = cval.val != 0;
-        WT_RET(__wt_config_gets(session, cfg, "prefix_compression_min", &cval));
-        btree->prefix_compression_min = (u_int)cval.val;
-    /* FALLTHROUGH */
-    case BTREE_COL_VAR:
-        WT_RET(__wt_config_gets(session, cfg, "dictionary", &cval));
-        btree->dictionary = (u_int)cval.val;
-        break;
-    }
-
-    WT_RET(__wt_config_gets_none(session, cfg, "block_compressor", &cval));
-    WT_RET(__wt_compressor_config(session, &cval, &btree->compressor));
-
-    /*
-     * Configure compression adjustment. When doing compression, assume compression rates that will
-     * result in pages larger than the maximum in-memory images allowed. If we're wrong, we adjust
-     * downward (but we're almost certainly correct, the maximum in-memory images allowed are only
-     * 4x the maximum page size, and compression always gives us more than 4x).
+     * Configure compression adjustment. This depends on the compressor
+     * pointer which was looked up from cache, but the adjustment is
+     * runtime-dependent on page sizes.
      */
     btree->intlpage_compadjust = false;
     btree->maxintlpage_precomp = btree->maxintlpage;
     btree->leafpage_compadjust = false;
     btree->maxleafpage_precomp = btree->maxleafpage;
     if (btree->compressor != NULL && btree->compressor->compress != NULL) {
-        /*
-         * Don't do compression adjustment when on-disk page sizes are less than 16KB. There's not
-         * enough compression going on to fine-tune the size, all we end up doing is hammering
-         * shared memory.
-         *
-         * Don't do compression adjustment when on-disk page sizes are equal to the maximum
-         * in-memory page image, the bytes taken for compression can't grow past the base value.
-         */
         if (btree->maxintlpage >= 16 * 1024 && btree->maxmempage_image > btree->maxintlpage) {
             btree->intlpage_compadjust = true;
             btree->maxintlpage_precomp = btree->maxmempage_image;
@@ -719,15 +909,12 @@ __btree_conf(WT_SESSION_IMPL *session, WT_CKPT *ckpt, bool is_ckpt)
         }
     }
 
-    /* Configure encryption. */
-    WT_RET(__wt_btree_config_encryptor(session, cfg, &btree->kencryptor));
+    /* huffman_value check - applies regardless of cache */
+    ret = __wt_config_gets(session, cfg, "huffman_value", &cval);
+    if (ret == 0 && cval.len != 0)
+        WT_RET_MSG(session, ENOTSUP, "Huffman encoding for values is no longer supported.");
 
-    /* Configure read-only. */
-    WT_RET(__wt_config_gets(session, cfg, "readonly", &cval));
-    if (cval.val)
-        F_SET(btree, WT_BTREE_READONLY);
-
-    /* Configure disaggregated storage tier. */
+    /* Configure disaggregated storage tier - still need to parse */
     WT_RET(__wt_config_gets(session, cfg, "disaggregated.storage_tier", &cval));
     if (cval.len > 0 && strncmp(cval.str, "cold", cval.len) == 0)
         btree->storage_tier = WT_BTREE_STORAGE_TIER_COLD;

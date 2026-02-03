@@ -107,6 +107,61 @@ typedef enum { /* Start position for eviction walk */
 #define WT_BTREE_ID_SHARED(x) (WT_BTREE_ID_NAMESPACE_ID(x) == WT_BTREE_ID_NAMESPACE_SHARED)
 
 /*
+ * WT_BTREE_CONF --
+ *     Cached btree configuration. Stored on WT_DATA_HANDLE, shared across
+ *     all sessions. Populated once from metadata string, never re-parsed
+ *     until table is altered or dropped.
+ */
+struct __wt_btree_conf {
+    bool parsed; /* Set true after successful parse */
+
+    /*
+     * String values (allocated copies, owned by this struct).
+     * These are duplicated because the metadata string may be freed/reallocated.
+     */
+    char *key_format;
+    char *value_format;
+    char *collator_name;   /* Collator name string, not object pointer */
+    char *compressor_name; /* Compressor name string, not object pointer */
+
+    /*
+     * Integer values - TYPES MUST MATCH WT_BTREE exactly to avoid
+     * truncation/sign-extension bugs during copy.
+     */
+    uint32_t id;
+    uint32_t allocsize;
+    uint32_t maxintlpage;
+    uint32_t maxleafpage;
+    uint32_t maxmempage_image;
+    /* NOTE: maxmempage is NOT cached - it's runtime-adjusted */
+
+    int split_pct;
+    u_int split_deepen_min_child;
+    u_int split_deepen_per_child;
+    u_int dictionary;
+    u_int prefix_compression_min;
+    uint8_t bitcnt;
+
+    WT_BTREE_CHECKSUM checksum;
+
+    /* Tiered storage timestamps */
+    uint64_t flush_most_recent_secs;
+    uint64_t flush_most_recent_ts;
+
+    /*
+     * Boolean flags packed into bitfield for cache efficiency.
+     */
+    uint32_t flags;
+#define WT_BTREE_CONF_CACHE_RESIDENT 0x00001u
+#define WT_BTREE_CONF_IGNORE_CACHE_SIZE 0x00002u
+#define WT_BTREE_CONF_IN_MEMORY 0x00004u
+#define WT_BTREE_CONF_LOG_ENABLED 0x00008u
+#define WT_BTREE_CONF_INTERNAL_KEY_TRUNCATE 0x00010u
+#define WT_BTREE_CONF_PREFIX_COMPRESSION 0x00020u
+#define WT_BTREE_CONF_READONLY 0x00040u
+};
+
+/*
  * WT_BTREE --
  *	A btree handle.
  */
