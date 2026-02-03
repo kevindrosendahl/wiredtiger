@@ -957,6 +957,9 @@ extern int iaa_extension_init(WT_CONNECTION *, WT_CONFIG_ARG *);
 #ifdef HAVE_BUILTIN_EXTENSION_PALM
 extern int palm_extension_init(WT_CONNECTION *, WT_CONFIG_ARG *);
 #endif
+#ifdef HAVE_BUILTIN_EXTENSION_PALITE
+extern int palite_extension_init(WT_CONNECTION *, WT_CONFIG_ARG *);
+#endif
 
 /*
  * __conn_builtin_extensions --
@@ -982,6 +985,9 @@ __conn_builtin_extensions(WT_CONNECTION_IMPL *conn, const char *cfg[])
 #endif
 #ifdef HAVE_BUILTIN_EXTENSION_PALM
     WT_RET(__conn_builtin_init(conn, "palm", palm_extension_init, cfg));
+#endif
+#ifdef HAVE_BUILTIN_EXTENSION_PALITE
+    WT_RET(__conn_builtin_init(conn, "palite", palite_extension_init, cfg));
 #endif
 
     /* Avoid warnings if no builtin extensions are configured. */
