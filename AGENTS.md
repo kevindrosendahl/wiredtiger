@@ -20,6 +20,13 @@ When creating a new design document:
 2. Name the design document `PLAN-{feature-name}.md`
 3. Reviews will be placed in the same directory automatically
 
+## Adding New Source Files
+
+When adding new `.c` source files to `src/`:
+1. Add the file to `dist/filelist.bzl` in the appropriate location (alphabetically within its directory group)
+2. The file is used by external projects building WiredTiger via Bazel
+3. Run `python dist/s_bazel.py` to regenerate if needed, or manually add to the `WT_FILELIST`
+
 ## Code Style
 
 This is the WiredTiger storage engine. Follow existing conventions:
