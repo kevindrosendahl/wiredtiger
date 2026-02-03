@@ -9,34 +9,26 @@
 
 Before implementation can begin, the following must be resolved:
 
-### 1. PALite Multi-Process Support (BLOCKER)
+### 1. PALite Multi-Process Support (RESOLVED)
 
-PALite explicitly does not support multi-process access today:
+~~PALite explicitly does not support multi-process access today.~~
 
-```cpp
-// From palite.cpp "Known Limitations" section:
-// PALite does not currently support multiple processes accessing the same
-// database files. While SQLite supports this use case, it allows only one
-// writer at a time. In absence of a proper locking mechanism between multiple
-// processes at PALite level, multiple writers will conflict and fail.
-```
+**Status**: RESOLVED. Investigation revealed that SQLite WAL mode already provides
+inter-process locking. The "Known Limitations" comment in PALite was overly conservative.
 
-This is tracked as **FIXME-WT-16159**. Either:
-- Wait for upstream fix, or
-- Contribute the fix (add proper inter-process locking at PALite level)
+See `designs/palite-multiprocess/PLAN-palite-multiprocess.md` for details.
 
-### 2. PALite Durability Setting (CRITICAL)
+**Fix applied**:
+- Default `synchronous` changed to FULL for multi-process durability
+- Documentation updated to reflect actual multi-process capabilities
+- FIXME-WT-16159 resolved
 
-PALite currently uses `PRAGMA synchronous = OFF` for performance:
+### 2. PALite Durability Setting (RESOLVED)
 
-```cpp
-// From palite.cpp:
-"PRAGMA synchronous = OFF;"  // Writes are NOT durable!
-```
+~~PALite currently uses `PRAGMA synchronous = OFF` for performance.~~
 
-For mongolite, this must be changed to `NORMAL` or `FULL` to ensure committed
-writes survive crashes. This may require a configuration option in PALite or
-a mongolite-specific PALite variant.
+**Status**: RESOLVED. The `synchronous` pragma is now configurable with FULL as default.
+Users who need the previous performance characteristics can set `synchronous=0`.
 
 ### 3. demoteToFollower() API Gap
 

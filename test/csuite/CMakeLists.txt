@@ -437,3 +437,16 @@ define_c_test(
     ARGUMENTS -h $<SHELL_PATH:$<TARGET_FILE_DIR:test_btree_conf_cache>/WT_HOME>
     DEPENDS "WT_POSIX"
 )
+
+# PALite multi-process and synchronous configuration test
+# Only build when PALite is enabled
+if(ENABLE_PALITE)
+    define_c_test(
+        TARGET test_palite_multiprocess
+        SOURCES test_palite_multiprocess/main.c
+        DIR_NAME test_palite_multiprocess
+        FLAGS "-DWT_BUILDDIR=\"${CMAKE_BINARY_DIR}\""
+        DEPENDS "WT_POSIX"
+    )
+    add_dependencies(test_palite_multiprocess wiredtiger_palite)
+endif()

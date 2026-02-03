@@ -56,13 +56,30 @@
  * In addition, there is a storage-wide lock that is used for operations that
  * require exclusive access to the entire storage. E.g., abandoning a checkpoint.
  *
- * -= Known Limitations =-
+ * -= Multi-Process Support =-
  *
- * PALite does not currently support multiple processes accessing the same
- * database files. While SQLite supports this use case, it allows only one
- * writer at a time. In absence of a proper locking mechanism between multiple
- * processes at PALite level, multiple writers will conflict and fail.
- * This limitation may be addressed in future releases.
+ * PALite supports multiple processes accessing the same database files.
+ * Inter-process coordination is handled by SQLite's WAL mode file locking:
+ * - Multiple readers can operate concurrently across processes
+ * - Writers are serialized via SQLite's file locks (busy_timeout handles contention)
+ *
+ * PALite's internal std::shared_mutex locks coordinate threads WITHIN a process,
+ * while SQLite's file locks coordinate BETWEEN processes.
+ *
+ * -= Durability =-
+ *
+ * The 'synchronous' configuration controls durability:
+ * - synchronous=2 (FULL, default): ACID-compliant, durable across power loss
+ * - synchronous=1 (NORMAL): Faster, but committed transactions may roll back on power loss
+ * - synchronous=0 (OFF): Fastest, but database may corrupt on OS crash
+ *
+ * For multi-process deployments requiring durability, use synchronous=2 (default).
+ *
+ * -= WAL Checkpointing =-
+ *
+ * SQLite automatically checkpoints the WAL file when it exceeds ~1000 pages.
+ * During checkpoint, readers may experience brief delays. For high-throughput
+ * scenarios, consider explicit checkpoint management via wal_autocheckpoint pragma.
  *
  * -= PALite structure =-
  *
@@ -356,6 +373,15 @@ struct Config {
     bool verbose_msg = true;               /* Send verbose messages to msg callback interface */
     bool sql_trace = false;                /* Trace all SQLite calls */
     bool verify = true;                    /* Verify integrity of page delta chains */
+    /*
+     * SQLite synchronous pragma setting.
+     * Controls durability vs. performance tradeoff:
+     * - 0 (OFF): No fsync, fastest, data may be lost on OS crash
+     * - 1 (NORMAL): fsync at critical moments, but not durable in WAL mode
+     * - 2 (FULL): fsync after every write, ACID-compliant, required for multi-process durability
+     * Default: 2 (FULL) for multi-process durability
+     */
+    int32_t synchronous = 2;
 
     Config() = default;
     Config(WT_EXTENSION_API *wt_api, WT_CONFIG_ARG *config) : extapi(wt_api)
@@ -377,6 +403,13 @@ struct Config {
         configure_value(parser.get(), config, "verbose_msg", verbose_msg);
         configure_value(parser.get(), config, "sql_trace", sql_trace);
         configure_value(parser.get(), config, "verify", verify);
+        configure_value(parser.get(), config, "synchronous", synchronous);
+
+        /* Validate synchronous value */
+        if (synchronous < 0 || synchronous > 2) {
+            throw std::invalid_argument(
+              "synchronous must be 0 (OFF), 1 (NORMAL), or 2 (FULL)");
+        }
     }
 
 private:
@@ -459,10 +492,10 @@ template <> struct std::formatter<Config> {
         return std::format_to(ctx.out(),
           "{{cache_size_mb={:L}, mmap_size_mb={:L}, delay_ms={}, error_ms={}, force_delay={}, "
           "force_error={}, materialization_delay_ms={}, last_materialized_lsn={}, "
-          "verbose={}, verbose_msg={}, sql_trace={}, verify={}}}",
+          "verbose={}, verbose_msg={}, sql_trace={}, verify={}, synchronous={}}}",
           cfg.cache_size_mb, cfg.mmap_size_mb, cfg.delay_ms, cfg.error_ms, cfg.force_delay,
           cfg.force_error, cfg.materialization_delay_ms, cfg.last_materialized_lsn, cfg.verbose,
-          cfg.verbose_msg, cfg.sql_trace, cfg.verify);
+          cfg.verbose_msg, cfg.sql_trace, cfg.verify, cfg.synchronous);
     }
 };
 
@@ -798,25 +831,35 @@ class Connection {
     sqlite3 *db = nullptr;
     std::vector<sqlite3_stmt *> statements;
 
-    /* Common configuration parameters for connections */
-    constexpr static std::string_view config_statements[] = {
-      /* Set busy timeout to 10 seconds. */
-      "PRAGMA busy_timeout = 10000;",
+    /*
+     * Generate configuration statements dynamically based on Config.synchronous.
+     * Called once per connection during initialization.
+     */
+    std::vector<std::string>
+    make_config_statements()
+    {
+        return {
+          /* Set busy timeout to 10 seconds. */
+          "PRAGMA busy_timeout = 10000;",
 
-      /*
-       * The WAL journaling mode uses a write-ahead log instead of a rollback journal to implement
-       * transactions. This significantly improves performance.
-       */
-      "PRAGMA journal_mode = WAL;",
+          /*
+           * The WAL journaling mode uses a write-ahead log instead of a rollback journal to
+           * implement transactions. This significantly improves performance and enables
+           * multi-process access.
+           */
+          "PRAGMA journal_mode = WAL;",
 
-      /*
-       * Turn Synchronous mode OFF for better performance. We don't care about database corruption
-       * in case of OS crash or power failure.
-       */
-      "PRAGMA synchronous = OFF;",
+          /*
+           * Synchronous mode for durability. Default FULL for multi-process durability.
+           * - 0 (OFF): Fastest, but database may corrupt on OS crash
+           * - 1 (NORMAL): Faster, but not durable in WAL mode across power loss
+           * - 2 (FULL): ACID-compliant, required for multi-process durability
+           */
+          std::format("PRAGMA synchronous = {};", config.synchronous),
 
-      /* For temporary store use memory instead of disk. */
-      "PRAGMA temp_store = MEMORY;"};
+          /* For temporary store use memory instead of disk. */
+          "PRAGMA temp_store = MEMORY;"};
+    }
 
 public:
     using StatementPtr = std::unique_ptr<sqlite3_stmt, std::function<decltype(sqlite3_reset)>>;
@@ -825,7 +868,7 @@ public:
     Connection(Config &cfg, const std::filesystem::path &db_path)
         : config(cfg), db(open_db(cfg, db_path))
     {
-        configure(Connection::config_statements);
+        configure(make_config_statements());
     }
 
     StatementPtr
@@ -848,10 +891,9 @@ public:
     configure(const Container &cfg_statements)
     {
         /*
-         * FIXME-WT-16159: Enable multi-process DB access in PALite
-         *
-         * Execute each configuration statement with retries on BUSY/LOCKED errors. Try each
-         * statement for up to 60 seconds. Delays between retries are 100ms.
+         * Execute each configuration statement with retries on BUSY/LOCKED errors.
+         * In multi-process scenarios, other processes may hold locks during configuration.
+         * Try each statement for up to 60 seconds with 100ms delays between retries.
          */
         const size_t max_retries = 600;
 
