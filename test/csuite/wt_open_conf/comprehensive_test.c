@@ -8,8 +8,7 @@
 #include "wiredtiger_open_conf.h"
 
 /*
- * Comprehensive tests for wiredtiger_open_ex API.
- * Tests all config keys with bypass verification.
+ * Comprehensive tests for wiredtiger_open_ex API. Tests all config keys with bypass verification.
  */
 
 static const char *home;
@@ -23,14 +22,12 @@ test_file_manager_config(void)
 {
     WT_CONNECTION *conn;
     WT_CONNECTION_IMPL *conn_impl;
-    WT_OPEN_CONFIG_ARG config[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 50 * WT_MEGABYTE),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_file_manager_close_idle_time, 45),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_file_manager_close_scan_interval, 15),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_file_manager_close_handle_minimum, 300),
-        WT_OPEN_CONFIG_ARG_END
-    };
+    WT_OPEN_CONFIG_ARG config[] = {WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 50 * WT_MEGABYTE),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_file_manager_close_idle_time, 45),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_file_manager_close_scan_interval, 15),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_file_manager_close_handle_minimum, 300),
+      WT_OPEN_CONFIG_ARG_END};
 
     printf("Test: file_manager configuration\n");
 
@@ -54,13 +51,11 @@ test_checkpoint_config(void)
 {
     WT_CONNECTION *conn;
     WT_CONNECTION_IMPL *conn_impl;
-    WT_OPEN_CONFIG_ARG config[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 50 * WT_MEGABYTE),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_checkpoint_wait, 120),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_checkpoint_log_size, 5LL * WT_GIGABYTE),
-        WT_OPEN_CONFIG_ARG_END
-    };
+    WT_OPEN_CONFIG_ARG config[] = {WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 50 * WT_MEGABYTE),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_checkpoint_wait, 120),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_checkpoint_log_size, 5LL * WT_GIGABYTE),
+      WT_OPEN_CONFIG_ARG_END};
 
     printf("Test: checkpoint configuration\n");
 
@@ -83,13 +78,10 @@ test_eviction_threads_config(void)
 {
     WT_CONNECTION *conn;
     WT_CONNECTION_IMPL *conn_impl;
-    WT_OPEN_CONFIG_ARG config[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 50 * WT_MEGABYTE),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_eviction_threads_min, 2),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_eviction_threads_max, 6),
-        WT_OPEN_CONFIG_ARG_END
-    };
+    WT_OPEN_CONFIG_ARG config[] = {WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 50 * WT_MEGABYTE),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_eviction_threads_min, 2),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_eviction_threads_max, 6), WT_OPEN_CONFIG_ARG_END};
 
     printf("Test: eviction threads configuration\n");
 
@@ -112,13 +104,11 @@ test_cache_timeout_config(void)
 {
     WT_CONNECTION *conn;
     WT_CONNECTION_IMPL *conn_impl;
-    WT_OPEN_CONFIG_ARG config[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 50 * WT_MEGABYTE),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_max_wait_ms, 5000),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_stuck_timeout_ms, 60000),
-        WT_OPEN_CONFIG_ARG_END
-    };
+    WT_OPEN_CONFIG_ARG config[] = {WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 50 * WT_MEGABYTE),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_max_wait_ms, 5000),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_stuck_timeout_ms, 60000),
+      WT_OPEN_CONFIG_ARG_END};
 
     printf("Test: cache timeout configuration\n");
 
@@ -142,12 +132,9 @@ test_session_max_config(void)
 {
     WT_CONNECTION *conn;
     WT_CONNECTION_IMPL *conn_impl;
-    WT_OPEN_CONFIG_ARG config[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 50 * WT_MEGABYTE),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_session_max, 200),
-        WT_OPEN_CONFIG_ARG_END
-    };
+    WT_OPEN_CONFIG_ARG config[] = {WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 50 * WT_MEGABYTE),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_session_max, 200), WT_OPEN_CONFIG_ARG_END};
 
     printf("Test: session_max configuration\n");
 
@@ -175,15 +162,12 @@ test_log_config_full(void)
     testutil_snprintf(log_dir, sizeof(log_dir), "%s/journal", home);
     testutil_recreate_dir(log_dir);
 
-    WT_OPEN_CONFIG_ARG config[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 50 * WT_MEGABYTE),
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_log_enabled, true),
-        WT_OPEN_CONFIG_ARG_SET_STR(WT_OPEN_CONF_log_path, "journal", 7),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_log_file_max, 50 * WT_MEGABYTE),
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_log_remove, true),
-        WT_OPEN_CONFIG_ARG_END
-    };
+    WT_OPEN_CONFIG_ARG config[] = {WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 50 * WT_MEGABYTE),
+      WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_log_enabled, true),
+      WT_OPEN_CONFIG_ARG_SET_STR(WT_OPEN_CONF_log_path, "journal", 7),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_log_file_max, 50 * WT_MEGABYTE),
+      WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_log_remove, true), WT_OPEN_CONFIG_ARG_END};
 
     printf("Test: full log configuration\n");
 
@@ -207,18 +191,15 @@ test_combined_config(void)
 {
     WT_CONNECTION *conn;
     WT_CONNECTION_IMPL *conn_impl;
-    WT_OPEN_CONFIG_ARG config[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 100 * WT_MEGABYTE),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_session_max, 150),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_eviction_target, 75),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_eviction_trigger, 92),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_eviction_threads_min, 3),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_eviction_threads_max, 8),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_file_manager_close_idle_time, 60),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_checkpoint_wait, 90),
-        WT_OPEN_CONFIG_ARG_END
-    };
+    WT_OPEN_CONFIG_ARG config[] = {WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 100 * WT_MEGABYTE),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_session_max, 150),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_eviction_target, 75),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_eviction_trigger, 92),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_eviction_threads_min, 3),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_eviction_threads_max, 8),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_file_manager_close_idle_time, 60),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_checkpoint_wait, 90), WT_OPEN_CONFIG_ARG_END};
 
     printf("Test: combined configuration\n");
 
@@ -244,12 +225,9 @@ static void
 test_config_base(void)
 {
     WT_CONNECTION *conn;
-    WT_OPEN_CONFIG_ARG config[] = {
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
-        WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 50 * WT_MEGABYTE),
-        WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_config_base, false),
-        WT_OPEN_CONFIG_ARG_END
-    };
+    WT_OPEN_CONFIG_ARG config[] = {WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_create, true),
+      WT_OPEN_CONFIG_ARG_SET_INT(WT_OPEN_CONF_cache_size, 50 * WT_MEGABYTE),
+      WT_OPEN_CONFIG_ARG_SET_BOOL(WT_OPEN_CONF_config_base, false), WT_OPEN_CONFIG_ARG_END};
 
     printf("Test: config_base=false configuration\n");
 

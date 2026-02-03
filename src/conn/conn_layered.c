@@ -1967,9 +1967,9 @@ __wti_disagg_conn_config(WT_SESSION_IMPL *session, const char **cfg, bool reconf
     if (reconfig) {
 
         /* Pick up a new checkpoint (followers only). */
-        WT_ERR_NOTFOUND_OK(__layered_config_get_string(session, conn, cfg,
-                             WT_OPEN_CONF_disaggregated_checkpoint_meta,
-                             "disaggregated.checkpoint_meta", &cval),
+        WT_ERR_NOTFOUND_OK(
+          __layered_config_get_string(session, conn, cfg,
+            WT_OPEN_CONF_disaggregated_checkpoint_meta, "disaggregated.checkpoint_meta", &cval),
           true);
         if (ret == 0 && cval.len > 0) {
             /*
@@ -1988,6 +1988,25 @@ __wti_disagg_conn_config(WT_SESSION_IMPL *session, const char **cfg, bool reconf
 
     /* Common settings between initial connection config and reconfig. */
 
+    /*
+     * Parse local_mode setting. This is parsed for both initial connection and reconfig, though the
+     * flag only affects behavior during step-down (reconfig from leader to follower). Setting it at
+     * initial connection is harmless and keeps the code simple.
+     */
+    {
+        int64_t local_mode_val;
+        ret = __layered_config_get_int(session, conn, cfg, WT_OPEN_CONF_disaggregated_local_mode,
+          "disaggregated.local_mode", &local_mode_val);
+        if (ret == 0 && local_mode_val != 0) {
+            F_SET(&conn->disaggregated_storage, WT_DISAGG_LOCAL_MODE);
+            __wt_verbose_debug1(
+              session, WT_VERB_DISAGGREGATED_STORAGE, "%s", "Disaggregated local mode enabled");
+        } else if (ret == WT_NOTFOUND) {
+            ret = 0; /* Optional config, default to false */
+        }
+        WT_ERR(ret);
+    }
+
     /* Get the last materialized LSN. */
     /* FIXME-WT-15447 Consider deprecating this. */
     {
@@ -2003,7 +2022,8 @@ __wti_disagg_conn_config(WT_SESSION_IMPL *session, const char **cfg, bool reconf
         }
         WT_ERR(ret);
         if (found_lsn && lsn_val >= 0)
-            WT_ERR_MSG_CHK(session, __wti_disagg_set_last_materialized_lsn(session, (uint64_t)lsn_val),
+            WT_ERR_MSG_CHK(session,
+              __wti_disagg_set_last_materialized_lsn(session, (uint64_t)lsn_val),
               "Failed to set the last materialized LSN to %" PRIu64, (uint64_t)lsn_val);
     }
 
@@ -2033,6 +2053,54 @@ __wti_disagg_conn_config(WT_SESSION_IMPL *session, const char **cfg, bool reconf
     } else if (was_leader && !leader) {
         /* Leader step-down. */
         time_start = __wt_clock(session);
+
+        /*
+         * In local mode, complete a checkpoint before stepping down to ensure
+         * all committed data is visible to other processes. The checkpoint must
+         * be performed BEFORE acquiring the checkpoint lock for step-down, because
+         * __wt_checkpoint_db will attempt to acquire the same lock internally.
+         *
+         * Note: There is a small race window between checkpoint completion and
+         * the leader flag being cleared. Writes that occur in this window will
+         * not be visible to followers. Callers should ensure no writes are in
+         * progress when initiating step-down.
+         *
+         * If checkpoint fails, we return an error and remain in leader state.
+         * The reconfigure operation is NOT atomic - some configuration changes
+         * may have been applied before the failure. The caller can retry the
+         * step-down or take other recovery action.
+         */
+        if (F_ISSET(&conn->disaggregated_storage, WT_DISAGG_LOCAL_MODE)) {
+            WT_SESSION_IMPL *ckpt_session;
+            WT_SESSION *wt_session;
+            int ckpt_ret;
+
+            __wt_verbose_debug1(session, WT_VERB_DISAGGREGATED_STORAGE, "%s",
+              "Local mode: performing checkpoint before step-down");
+
+            /*
+             * Checkpoint cannot run in the default session (session ID 0) because the checkpoint
+             * code asserts that it's not running in the default session. We need to create an
+             * internal session specifically for the checkpoint operation.
+             */
+            WT_ERR(__wt_open_internal_session(
+              conn, "local-mode-stepdown-checkpoint", true, 0, 0, &ckpt_session));
+            wt_session = (WT_SESSION *)ckpt_session;
+
+            ckpt_ret = wt_session->checkpoint(wt_session, "force=true");
+            WT_TRET(wt_session->close(wt_session, NULL));
+
+            if (ckpt_ret != 0)
+                WT_ERR_MSG_CHK(
+                  session, ckpt_ret, "Failed to checkpoint during local mode step-down");
+            if (ret != 0)
+                WT_ERR_MSG_CHK(
+                  session, ret, "Failed to close checkpoint session during local mode step-down");
+
+            __wt_verbose_debug1(session, WT_VERB_DISAGGREGATED_STORAGE, "%s",
+              "Local mode: checkpoint complete, proceeding with step-down");
+        }
+
         WT_WITH_CHECKPOINT_LOCK(session, __disagg_step_down(session));
         time_stop = __wt_clock(session);
         WT_STAT_CONN_SET(session, disagg_step_down_time, WT_CLOCKDIFF_MS(time_stop, time_start));
@@ -2081,9 +2149,9 @@ __wti_disagg_conn_config(WT_SESSION_IMPL *session, const char **cfg, bool reconf
         WT_ERR(__disagg_metadata_table_init(session));
 
         /* Pick up the selected checkpoint. */
-        WT_ERR_NOTFOUND_OK(__layered_config_get_string(session, conn, cfg,
-                             WT_OPEN_CONF_disaggregated_checkpoint_meta,
-                             "disaggregated.checkpoint_meta", &cval),
+        WT_ERR_NOTFOUND_OK(
+          __layered_config_get_string(session, conn, cfg,
+            WT_OPEN_CONF_disaggregated_checkpoint_meta, "disaggregated.checkpoint_meta", &cval),
           true);
         if (ret == 0 && cval.len > 0) {
             WT_WITH_CHECKPOINT_LOCK(
@@ -2146,9 +2214,9 @@ __wti_disagg_conn_config(WT_SESSION_IMPL *session, const char **cfg, bool reconf
         /* Get the number of threads used to drain the ingest tables. */
         {
             int64_t drain_threads_val;
-            WT_ERR(__layered_config_get_int(session, conn, cfg,
-              WT_OPEN_CONF_disaggregated_drain_threads, "disaggregated.drain_threads",
-              &drain_threads_val));
+            WT_ERR(
+              __layered_config_get_int(session, conn, cfg, WT_OPEN_CONF_disaggregated_drain_threads,
+                "disaggregated.drain_threads", &drain_threads_val));
             if (drain_threads_val >= 0)
                 conn->layered_drain_data.thread_count = (uint32_t)drain_threads_val;
         }

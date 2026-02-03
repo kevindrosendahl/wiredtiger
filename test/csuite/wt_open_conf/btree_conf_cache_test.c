@@ -30,8 +30,8 @@
 /*
  * Test program for btree configuration cache.
  *
- * This verifies that btree config is cached properly and that subsequent
- * table opens use the cached values rather than re-parsing the metadata.
+ * This verifies that btree config is cached properly and that subsequent table opens use the cached
+ * values rather than re-parsing the metadata.
  */
 
 static const char *home;
@@ -65,9 +65,8 @@ get_stat(WT_SESSION *session, const char *uri, const char *stat_name)
 
 /*
  * test_cache_hit --
- *     Test that the cache is populated and values are correct.
- *     Note: The btree is only configured once per dhandle, so the cache
- *     hit/miss stats measure dhandle-level caching, not per-cursor.
+ *     Test that the cache is populated and values are correct. Note: The btree is only configured
+ *     once per dhandle, so the cache hit/miss stats measure dhandle-level caching, not per-cursor.
  */
 static void
 test_cache_hit(void)
@@ -178,10 +177,10 @@ test_multiple_tables(void)
     testutil_check(conn->open_session(conn, NULL, NULL, &session));
 
     /* Create two tables with different leaf_page_max configs */
-    testutil_check(session->create(
-      session, "table:test1", "key_format=i,value_format=S,leaf_page_max=16384"));
-    testutil_check(session->create(
-      session, "table:test2", "key_format=i,value_format=S,leaf_page_max=65536"));
+    testutil_check(
+      session->create(session, "table:test1", "key_format=i,value_format=S,leaf_page_max=16384"));
+    testutil_check(
+      session->create(session, "table:test2", "key_format=i,value_format=S,leaf_page_max=65536"));
 
     /* Open cursors on both tables */
     testutil_check(session->open_cursor(session, "table:test1", NULL, NULL, &cursor1));

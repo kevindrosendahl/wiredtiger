@@ -541,13 +541,13 @@ __wti_sweep_config(WT_SESSION_IMPL *session, const char *cfg[])
     conn->sweep_idle_time = 0;
     WT_RET(__sweep_config_get_int(session, conn, cfg, WT_OPEN_CONF_in_memory, "in_memory", &val));
     if (val == 0) {
-        WT_RET(__sweep_config_get_int(session, conn, cfg,
-          WT_OPEN_CONF_file_manager_close_idle_time, "file_manager.close_idle_time", &val));
+        WT_RET(__sweep_config_get_int(session, conn, cfg, WT_OPEN_CONF_file_manager_close_idle_time,
+          "file_manager.close_idle_time", &val));
         conn->sweep_idle_time = (uint64_t)val;
     }
 
-    WT_RET(__sweep_config_get_int(session, conn, cfg,
-      WT_OPEN_CONF_file_manager_close_scan_interval, "file_manager.close_scan_interval", &val));
+    WT_RET(__sweep_config_get_int(session, conn, cfg, WT_OPEN_CONF_file_manager_close_scan_interval,
+      "file_manager.close_scan_interval", &val));
     conn->sweep_interval = (uint64_t)val;
 
     WT_RET(__sweep_config_get_int(session, conn, cfg,

@@ -146,9 +146,9 @@ struct __wt_data_handle {
     void *handle;         /* Generic handle */
 
     /*
-     * Cached btree configuration. Populated on first open from metadata
-     * string, used by all subsequent opens. Protected by dhandle rwlock
-     * (write lock needed to populate, read lock sufficient to use).
+     * Cached btree configuration. Populated on first open from metadata string, used by all
+     * subsequent opens. Protected by dhandle rwlock (write lock needed to populate, read lock
+     * sufficient to use).
      */
     WT_BTREE_CONF *btree_conf_cache;
 

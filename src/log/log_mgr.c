@@ -90,8 +90,8 @@ __logmgr_sync_cfg(WT_SESSION_IMPL *session, const char **cfg)
     else
         FLD_CLR(txn_logsync, WT_LOG_SYNC_ENABLED);
 
-    WT_RET(__log_config_get_string(session, conn, cfg, WT_OPEN_CONF_transaction_sync_method,
-      "transaction_sync.method", &cval));
+    WT_RET(__log_config_get_string(
+      session, conn, cfg, WT_OPEN_CONF_transaction_sync_method, "transaction_sync.method", &cval));
     if (WT_CONFIG_LIT_MATCH("dsync", cval))
         FLD_SET(txn_logsync, WT_LOG_DSYNC | WT_LOG_FLUSH);
     else if (WT_CONFIG_LIT_MATCH("fsync", cval))
@@ -324,8 +324,8 @@ __wt_logmgr_config(WT_SESSION_IMPL *session, const char **cfg, bool reconfig)
         WT_RET(__wt_compressor_config(session, &cval, &log_mgr->compressor));
 
         log_mgr->log_path = NULL;
-        WT_RET(__log_config_get_string(
-          session, conn, cfg, WT_OPEN_CONF_log_path, "log.path", &cval));
+        WT_RET(
+          __log_config_get_string(session, conn, cfg, WT_OPEN_CONF_log_path, "log.path", &cval));
         WT_RET(__wt_strndup(session, cval.str, cval.len, &log_mgr->log_path));
     }
 
@@ -346,8 +346,8 @@ __wt_logmgr_config(WT_SESSION_IMPL *session, const char **cfg, bool reconfig)
 
         if (conn->conf_source != NULL && conn->conf_source->type == WT_CONF_SOURCE_STRUCT) {
             /* For struct config, just check log_remove directly */
-            if (__wt_conf_source_get_int(session, conn->conf_source,
-                  WT_OPEN_CONF_log_remove, "remove", "log", &log_remove_val) == 0) {
+            if (__wt_conf_source_get_int(session, conn->conf_source, WT_OPEN_CONF_log_remove,
+                  "remove", "log", &log_remove_val) == 0) {
                 if (log_remove_val != 0)
                     F_SET(&conn->log_mgr, WT_LOG_REMOVE);
                 found_in_struct = true;
@@ -426,8 +426,8 @@ __wt_logmgr_config(WT_SESSION_IMPL *session, const char **cfg, bool reconfig)
      */
     if (!reconfig) {
         /*
-         * log.recover is a string type ("error" or "on"), which requires special handling.
-         * Keep using string parsing for this one since it needs string comparison.
+         * log.recover is a string type ("error" or "on"), which requires special handling. Keep
+         * using string parsing for this one since it needs string comparison.
          */
         WT_RET(__wt_config_gets_def(session, cfg, "log.recover", 0, &cval));
         if (WT_CONFIG_LIT_MATCH("error", cval))

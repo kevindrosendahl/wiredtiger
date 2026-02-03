@@ -149,22 +149,20 @@ __wti_connection_destroy(WT_CONNECTION_IMPL *conn)
     __wt_free(session, WT_CONN_SESSIONS_GET(conn));
 
     /*
-     * Free struct config source BEFORE __wt_stat_connection_discard.
-     * The __wt_free macro updates memory statistics, which requires the
-     * stats array to still be valid.
+     * Free struct config source BEFORE __wt_stat_connection_discard. The __wt_free macro updates
+     * memory statistics, which requires the stats array to still be valid.
      */
     /* Free struct config source if present (from wiredtiger_open_ex) */
     if (conn->conf_source != NULL) {
         /*
          * Free any copied string values in the args array.
          *
-         * Note: We cast away const from args and v_str.str below. This is intentional.
-         * The public WT_OPEN_CONFIG_ARG struct uses 'const char *' for v_str.str to
-         * signal to users that they shouldn't modify the string. However, during
-         * wiredtiger_open_ex we copy user strings via __wt_strndup and store them
-         * in this const field. When freeing, we must cast away const. This is a
-         * standard C idiom for "const in API, mutable internally" and is safe
-         * because we allocated this memory ourselves.
+         * Note: We cast away const from args and v_str.str below. This is intentional. The public
+         * WT_OPEN_CONFIG_ARG struct uses 'const char *' for v_str.str to signal to users that they
+         * shouldn't modify the string. However, during wiredtiger_open_ex we copy user strings via
+         * __wt_strndup and store them in this const field. When freeing, we must cast away const.
+         * This is a standard C idiom for "const in API, mutable internally" and is safe because we
+         * allocated this memory ourselves.
          */
         if (conn->conf_source->type == WT_CONF_SOURCE_STRUCT &&
           conn->conf_source->u.structured.args != NULL) {

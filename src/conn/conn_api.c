@@ -11,9 +11,9 @@
 
 /*
  * __conn_config_get_int --
- *     Get an integer config value, checking struct config first if available.
- *     This is the core bypass mechanism - if the key is in struct config,
- *     we return directly without parsing the config string.
+ *     Get an integer config value, checking struct config first if available. This is the core
+ *     bypass mechanism - if the key is in struct config, we return directly without parsing the
+ *     config string.
  */
 static int
 __conn_config_get_int(WT_SESSION_IMPL *session, WT_CONNECTION_IMPL *conn, const char **cfg,
@@ -30,8 +30,8 @@ __conn_config_get_int(WT_SESSION_IMPL *session, WT_CONNECTION_IMPL *conn, const 
     if (conf_source != NULL && conf_source->type == WT_CONF_SOURCE_STRUCT) {
         ret = __wt_open_conf_get_key_info(key_id, NULL, &parent_name, NULL);
         if (ret == 0) {
-            ret = __wt_conf_source_get_int(
-              session, conf_source, key_id, key_name, parent_name, valuep);
+            ret =
+              __wt_conf_source_get_int(session, conf_source, key_id, key_name, parent_name, valuep);
             if (ret == 0)
                 return (0); /* Found in struct config - bypass complete */
             /* WT_NOTFOUND means key not in struct config, fall through to string */
@@ -62,8 +62,8 @@ __conn_config_get_string(WT_SESSION_IMPL *session, WT_CONNECTION_IMPL *conn, con
     if (conf_source != NULL && conf_source->type == WT_CONF_SOURCE_STRUCT) {
         ret = __wt_open_conf_get_key_info(key_id, NULL, &parent_name, NULL);
         if (ret == 0) {
-            ret =
-              __wt_conf_source_get_string(session, conf_source, key_id, key_name, parent_name, cval);
+            ret = __wt_conf_source_get_string(
+              session, conf_source, key_id, key_name, parent_name, cval);
             if (ret == 0)
                 return (0); /* Found in struct config - bypass complete */
             /* WT_NOTFOUND means key not in struct config, fall through to string */
@@ -1937,8 +1937,8 @@ __conn_single(WT_SESSION_IMPL *session, const char *cfg[])
      * which depends on having run recovery, so the config hack is the simplest way to break that
      * dependency.
      */
-    WT_RET(__conn_config_get_string(session, conn, cfg, WT_OPEN_CONF_disaggregated_page_log,
-      "disaggregated.page_log", &cval));
+    WT_RET(__conn_config_get_string(
+      session, conn, cfg, WT_OPEN_CONF_disaggregated_page_log, "disaggregated.page_log", &cval));
     is_disag = cval.len > 0;
 
     bytelock = true;
@@ -2300,8 +2300,8 @@ __wti_debug_mode_config(WT_SESSION_IMPL *session, const char *cfg[])
     WT_RET(__debug_mode_log_retention_config(session, cfg));
     WT_RET(__debug_mode_background_compact_config(session, cfg));
 
-    WT_RET(__conn_config_get_int(session, conn, cfg, WT_OPEN_CONF_debug_mode_configuration,
-      "debug_mode.configuration", &val));
+    WT_RET(__conn_config_get_int(
+      session, conn, cfg, WT_OPEN_CONF_debug_mode_configuration, "debug_mode.configuration", &val));
     if (val)
         FLD_SET(conn->debug_flags, WT_CONN_DEBUG_CONFIGURATION);
     else
@@ -2321,8 +2321,8 @@ __wti_debug_mode_config(WT_SESSION_IMPL *session, const char *cfg[])
     else
         FLD_CLR(conn->debug_flags, WT_CONN_DEBUG_CRASH_POINT_COLGROUP);
 
-    WT_RET(__conn_config_get_int(session, conn, cfg, WT_OPEN_CONF_debug_mode_cursor_copy,
-      "debug_mode.cursor_copy", &val));
+    WT_RET(__conn_config_get_int(
+      session, conn, cfg, WT_OPEN_CONF_debug_mode_cursor_copy, "debug_mode.cursor_copy", &val));
     if (val)
         FLD_SET(conn->debug_flags, WT_CONN_DEBUG_CURSOR_COPY);
     else
@@ -2342,8 +2342,8 @@ __wti_debug_mode_config(WT_SESSION_IMPL *session, const char *cfg[])
     else
         FLD_CLR(conn->debug_flags, WT_CONN_DEBUG_EVICT_AGGRESSIVE_MODE);
 
-    WT_RET(__conn_config_get_int(session, conn, cfg, WT_OPEN_CONF_debug_mode_realloc_exact,
-      "debug_mode.realloc_exact", &val));
+    WT_RET(__conn_config_get_int(
+      session, conn, cfg, WT_OPEN_CONF_debug_mode_realloc_exact, "debug_mode.realloc_exact", &val));
     if (val)
         FLD_SET(conn->debug_flags, WT_CONN_DEBUG_REALLOC_EXACT);
     else
@@ -2374,16 +2374,16 @@ __wti_debug_mode_config(WT_SESSION_IMPL *session, const char *cfg[])
     else
         FLD_CLR(conn->debug_flags, WT_CONN_DEBUG_STRESS_SKIPLIST);
 
-    WT_RET(__conn_config_get_int(session, conn, cfg, WT_OPEN_CONF_debug_mode_table_logging,
-      "debug_mode.table_logging", &val));
+    WT_RET(__conn_config_get_int(
+      session, conn, cfg, WT_OPEN_CONF_debug_mode_table_logging, "debug_mode.table_logging", &val));
     if (val)
         FLD_SET(conn->debug_flags, WT_CONN_DEBUG_TABLE_LOGGING);
     else
         FLD_CLR(conn->debug_flags, WT_CONN_DEBUG_TABLE_LOGGING);
 
-    WT_RET(__conn_config_get_int(
-      session, conn, cfg, WT_OPEN_CONF_debug_mode_tiered_flush_error_continue,
-      "debug_mode.tiered_flush_error_continue", &val));
+    WT_RET(
+      __conn_config_get_int(session, conn, cfg, WT_OPEN_CONF_debug_mode_tiered_flush_error_continue,
+        "debug_mode.tiered_flush_error_continue", &val));
     if (val)
         FLD_SET(conn->debug_flags, WT_CONN_DEBUG_TIERED_FLUSH_ERROR_CONTINUE);
     else
@@ -2396,8 +2396,8 @@ __wti_debug_mode_config(WT_SESSION_IMPL *session, const char *cfg[])
     else
         FLD_CLR(conn->debug_flags, WT_CONN_DEBUG_UPDATE_RESTORE_EVICT);
 
-    WT_RET(__conn_config_get_int(
-      session, conn, cfg, WT_OPEN_CONF_debug_mode_eviction_checkpoint_ts_ordering,
+    WT_RET(__conn_config_get_int(session, conn, cfg,
+      WT_OPEN_CONF_debug_mode_eviction_checkpoint_ts_ordering,
       "debug_mode.eviction_checkpoint_ts_ordering", &val));
     if (val)
         FLD_SET(conn->debug_flags, WT_CONN_DEBUG_EVICTION_CKPT_TS_ORDERING);
@@ -2463,7 +2463,8 @@ __wti_json_config(WT_SESSION_IMPL *session, const char *cfg[], bool reconfig)
     WT_RET(ret);
 
     /* Check if JSON-encoded message strings are enabled, per event handler category. */
-    WT_RET(__conn_config_get_string(session, conn, cfg, WT_OPEN_CONF_json_output, "json_output", &cval));
+    WT_RET(
+      __conn_config_get_string(session, conn, cfg, WT_OPEN_CONF_json_output, "json_output", &cval));
     flags = 0;
     for (ft = jsontypes; ft->name != NULL; ft++) {
         if ((ret = __wt_config_subgets(session, &cval, ft->name, &sval)) == 0 && sval.val != 0)
@@ -2928,8 +2929,8 @@ __conn_session_size(WT_SESSION_IMPL *session, const char *cfg[], uint32_t *vp)
 
     /* If live restore is enabled add its thread count. */
     if (F_ISSET(conn, WT_CONN_LIVE_RESTORE_FS)) {
-        WT_RET(__conn_config_get_int(session, conn, cfg,
-          WT_OPEN_CONF_live_restore_threads_max, "live_restore.threads_max", &live_restore_threads));
+        WT_RET(__conn_config_get_int(session, conn, cfg, WT_OPEN_CONF_live_restore_threads_max,
+          "live_restore.threads_max", &live_restore_threads));
         v += live_restore_threads;
     }
 
@@ -3176,10 +3177,9 @@ err:
 
 /*
  * __wiredtiger_open_internal --
- *     Internal implementation of wiredtiger_open that supports both string
- *     and struct configuration. When struct config is provided, it is stored
- *     on the connection early and config reads check it first, bypassing
- *     string parsing for keys present in the struct config.
+ *     Internal implementation of wiredtiger_open that supports both string and struct
+ *     configuration. When struct config is provided, it is stored on the connection early and
+ *     config reads check it first, bypassing string parsing for keys present in the struct config.
  */
 static int
 __wiredtiger_open_internal(const char *home, WT_EVENT_HANDLER *event_handler, const char *config,
@@ -3244,8 +3244,8 @@ __wiredtiger_open_internal(const char *home, WT_EVENT_HANDLER *event_handler, co
     WT_ERR(__wti_connection_init(conn));
 
     /*
-     * If struct config is provided, set it up early so that config reads
-     * can bypass string parsing. We copy the args to ensure they persist.
+     * If struct config is provided, set it up early so that config reads can bypass string parsing.
+     * We copy the args to ensure they persist.
      */
     if (config_args != NULL) {
         WT_OPEN_CONFIG_ARG *args_copy;
@@ -3283,8 +3283,7 @@ __wiredtiger_open_internal(const char *home, WT_EVENT_HANDLER *event_handler, co
                       config_args[i].value.v_str.len, (char **)&args_copy[i].value.v_str.str);
                 } else {
                     /* Empty string: allocate a single null byte */
-                    ret = __wt_strndup(
-                      session, "", 0, (char **)&args_copy[i].value.v_str.str);
+                    ret = __wt_strndup(session, "", 0, (char **)&args_copy[i].value.v_str.str);
                 }
                 if (ret != 0) {
                     /* Clean up already-copied strings before jumping to err */
@@ -3346,23 +3345,24 @@ __wiredtiger_open_internal(const char *home, WT_EVENT_HANDLER *event_handler, co
      * to trust the environment before reading the filesystem, the wiredtiger_open config string is
      * the only way.
      *
-     * Note: When struct config is provided, these reads check struct config first, bypassing
-     * string parsing if the key is found there.
+     * Note: When struct config is provided, these reads check struct config first, bypassing string
+     * parsing if the key is found there.
      */
     {
         int64_t in_memory_val, readonly_val;
-        WT_ERR(
-          __conn_config_get_int(session, conn, cfg, WT_OPEN_CONF_in_memory, "in_memory", &in_memory_val));
+        WT_ERR(__conn_config_get_int(
+          session, conn, cfg, WT_OPEN_CONF_in_memory, "in_memory", &in_memory_val));
         if (in_memory_val != 0)
             F_SET(conn, WT_CONN_IN_MEMORY);
-        WT_ERR(
-          __conn_config_get_int(session, conn, cfg, WT_OPEN_CONF_readonly, "readonly", &readonly_val));
+        WT_ERR(__conn_config_get_int(
+          session, conn, cfg, WT_OPEN_CONF_readonly, "readonly", &readonly_val));
         if (readonly_val)
             F_SET(conn, WT_CONN_READONLY);
     }
 
     /* Configure error messages so we get them right early. */
-    WT_ERR(__conn_config_get_string(session, conn, cfg, WT_OPEN_CONF_error_prefix, "error_prefix", &cval));
+    WT_ERR(__conn_config_get_string(
+      session, conn, cfg, WT_OPEN_CONF_error_prefix, "error_prefix", &cval));
     if (cval.len != 0)
         WT_ERR(__wt_strndup(session, cval.str, cval.len, &conn->error_prefix));
 
@@ -3497,8 +3497,8 @@ __wiredtiger_open_internal(const char *home, WT_EVENT_HANDLER *event_handler, co
     WT_ERR(__conn_session_size(session, cfg, &conn->session_array.size));
     {
         int64_t scratch_max;
-        WT_ERR(__conn_config_get_int(
-          session, conn, cfg, WT_OPEN_CONF_session_scratch_max, "session_scratch_max", &scratch_max));
+        WT_ERR(__conn_config_get_int(session, conn, cfg, WT_OPEN_CONF_session_scratch_max,
+          "session_scratch_max", &scratch_max));
         conn->session_scratch_max = (size_t)scratch_max;
     }
 
@@ -3519,8 +3519,8 @@ __wiredtiger_open_internal(const char *home, WT_EVENT_HANDLER *event_handler, co
         if (cache_cursors_val)
             F_SET(conn, WT_CONN_CACHE_CURSORS);
 
-        WT_ERR(__conn_config_get_int(
-          session, conn, cfg, WT_OPEN_CONF_checkpoint_sync, "checkpoint_sync", &checkpoint_sync_val));
+        WT_ERR(__conn_config_get_int(session, conn, cfg, WT_OPEN_CONF_checkpoint_sync,
+          "checkpoint_sync", &checkpoint_sync_val));
         if (checkpoint_sync_val)
             F_SET(conn, WT_CONN_CKPT_SYNC);
     }
@@ -3564,8 +3564,8 @@ __wiredtiger_open_internal(const char *home, WT_EVENT_HANDLER *event_handler, co
 
         WT_ERR(__conn_config_get_int(session, conn, cfg, WT_OPEN_CONF_mmap, "mmap", &mmap_val));
         conn->mmap = mmap_val != 0;
-        WT_ERR(
-          __conn_config_get_int(session, conn, cfg, WT_OPEN_CONF_mmap_all, "mmap_all", &mmap_all_val));
+        WT_ERR(__conn_config_get_int(
+          session, conn, cfg, WT_OPEN_CONF_mmap_all, "mmap_all", &mmap_all_val));
         conn->mmap_all = mmap_all_val != 0;
     }
 
@@ -3575,8 +3575,8 @@ __wiredtiger_open_internal(const char *home, WT_EVENT_HANDLER *event_handler, co
           "prefetch.available", &prefetch_avail_val));
         conn->prefetch_available = prefetch_avail_val != 0;
         if (F_ISSET(conn, WT_CONN_IN_MEMORY) && conn->prefetch_available)
-            WT_ERR_MSG(
-              session, EINVAL, "prefetch configuration is incompatible with in-memory configuration");
+            WT_ERR_MSG(session, EINVAL,
+              "prefetch configuration is incompatible with in-memory configuration");
         WT_ERR(__conn_config_get_int(session, conn, cfg, WT_OPEN_CONF_prefetch_default,
           "prefetch.default", &prefetch_default_val));
         conn->prefetch_auto_on = prefetch_default_val != 0;
@@ -3873,8 +3873,8 @@ err:
 
 /*
  * wiredtiger_open --
- *     Main library entry point: open a new connection to a WiredTiger database.
- *     This is the traditional string-based configuration API.
+ *     Main library entry point: open a new connection to a WiredTiger database. This is the
+ *     traditional string-based configuration API.
  */
 int
 wiredtiger_open(const char *home, WT_EVENT_HANDLER *event_handler, const char *config,
@@ -3887,13 +3887,12 @@ wiredtiger_open(const char *home, WT_EVENT_HANDLER *event_handler, const char *c
  * wiredtiger_open_ex --
  *     Open a WiredTiger connection with structured configuration.
  *
- *     This is the struct-based configuration API that bypasses string parsing.
- *     The struct config is stored on the connection early, and config reads
- *     check it first before falling back to default string config parsing.
+ * This is the struct-based configuration API that bypasses string parsing. The struct config is
+ *     stored on the connection early, and config reads check it first before falling back to
+ *     default string config parsing.
  *
- *     Performance: For keys present in the struct config, no string parsing
- *     occurs. The config stack (base defaults, environment, config files)
- *     is still built for keys not in the struct config.
+ * Performance: For keys present in the struct config, no string parsing occurs. The config stack
+ *     (base defaults, environment, config files) is still built for keys not in the struct config.
  */
 int
 wiredtiger_open_ex(const char *home, WT_EVENT_HANDLER *event_handler,
@@ -3932,5 +3931,6 @@ wiredtiger_open_ex(const char *home, WT_EVENT_HANDLER *event_handler,
      * The base configuration defaults will still be loaded from the compiled
      * base config string.
      */
-    return __wiredtiger_open_internal(home, event_handler, NULL, config_args, config_count, connectionp);
+    return __wiredtiger_open_internal(
+      home, event_handler, NULL, config_args, config_count, connectionp);
 }

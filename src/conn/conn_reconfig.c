@@ -115,13 +115,13 @@ __wti_conn_compat_config(WT_SESSION_IMPL *session, const char **cfg, bool reconf
      * The maximum and minimum required version for existing files is only available on opening the
      * connection, not reconfigure.
      */
-    WT_RET(__reconfig_get_string(session, conn, cfg,
-      WT_OPEN_CONF_compatibility_require_min, "compatibility.require_min", &cval));
+    WT_RET(__reconfig_get_string(session, conn, cfg, WT_OPEN_CONF_compatibility_require_min,
+      "compatibility.require_min", &cval));
     if (cval.len != 0)
         WT_RET(__conn_compat_parse(session, &cval, &min_compat.major, &min_compat.minor));
 
-    WT_RET(__reconfig_get_string(session, conn, cfg,
-      WT_OPEN_CONF_compatibility_require_max, "compatibility.require_max", &cval));
+    WT_RET(__reconfig_get_string(session, conn, cfg, WT_OPEN_CONF_compatibility_require_max,
+      "compatibility.require_max", &cval));
     if (cval.len != 0)
         WT_RET(__conn_compat_parse(session, &cval, &max_compat.major, &max_compat.minor));
 

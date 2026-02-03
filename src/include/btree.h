@@ -116,8 +116,8 @@ struct __wt_btree_conf {
     bool parsed; /* Set true after successful parse */
 
     /*
-     * String values (allocated copies, owned by this struct).
-     * These are duplicated because the metadata string may be freed/reallocated.
+     * String values (allocated copies, owned by this struct). These are duplicated because the
+     * metadata string may be freed/reallocated.
      */
     char *key_format;
     char *value_format;
@@ -125,8 +125,8 @@ struct __wt_btree_conf {
     char *compressor_name; /* Compressor name string, not object pointer */
 
     /*
-     * Integer values - TYPES MUST MATCH WT_BTREE exactly to avoid
-     * truncation/sign-extension bugs during copy.
+     * Integer values - TYPES MUST MATCH WT_BTREE exactly to avoid truncation/sign-extension bugs
+     * during copy.
      */
     uint32_t id;
     uint32_t allocsize;
