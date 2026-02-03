@@ -1722,7 +1722,7 @@ struct Pages : public Table<Pages> {
             const char *enc = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 4));
             strncpy(page.encryption.dek, enc ? enc : "", sizeof(page.encryption.dek));
 
-            return std::move(page);
+            return page;
         };
 
         /*
@@ -2218,7 +2218,7 @@ public:
 
     ~PaliteHandle() = default;
     PaliteHandle(WT_PAGE_LOG *palite, Config &cfg, Storage &store, uint64_t tid)
-        : WT_PAGE_LOG_HANDLE{}, table_id(tid), config(cfg), storage(store)
+        : WT_PAGE_LOG_HANDLE{}, table_id(tid), storage(store), config(cfg)
     {
         WT_PAGE_LOG_HANDLE::page_log = palite;
         initialize_interface();
@@ -2596,7 +2596,11 @@ Palite::initialize_interface()
  *     A standalone, durable implementation of the WT_PAGE_LOG interface (PALI).
  */
 extern "C" {
+#ifdef HAVE_BUILTIN_EXTENSION_PALITE
+int
+#else
 static int
+#endif
 palite_extension_init(WT_CONNECTION *connection, WT_CONFIG_ARG *cfg_arg)
 {
     int ret = 0;
