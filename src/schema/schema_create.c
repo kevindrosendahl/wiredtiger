@@ -275,7 +275,7 @@ __create_file(WT_SESSION_IMPL *session, const char *uri, bool exclusive, const c
             for (p = filecfg; *p != NULL; ++p)
                 ;
             *p = val->data;
-            WT_ERR(__wt_config_collapse(session, filecfg, &fileconf));
+            WT_ERR(__wti_config_collapse_fast(session, filecfg, &fileconf, NULL));
         } else {
             /* Try to recreate the associated metadata from the imported data source. */
             WT_ERR(__wt_import_repair(session, uri, &fileconf));
@@ -630,7 +630,7 @@ __create_colgroup(WT_SESSION_IMPL *session, const char *name, bool exclusive, co
         WT_ERR(__wt_schema_create(session, source, sourceconf));
 
         __wt_free(session, cgconf);
-        WT_ERR(__wt_config_collapse(session, cfg, &cgconf));
+        WT_ERR(__wti_config_collapse_fast(session, cfg, &cgconf, NULL));
 
         /* FIXME-WT-12021 Replace this with a proper failpoint once the framework is available. */
         if (FLD_ISSET(S2C(session)->debug_flags, WT_CONN_DEBUG_CRASH_POINT_COLGROUP)) {
@@ -869,7 +869,7 @@ __create_index(WT_SESSION_IMPL *session, const char *name, bool exclusive, const
 
     cfg[1] = sourceconf;
     cfg[2] = confbuf.data;
-    WT_ERR(__wt_config_collapse(session, cfg, &idxconf));
+    WT_ERR(__wti_config_collapse_fast(session, cfg, &idxconf, NULL));
 
     if (!exists) {
         WT_ERR(__wt_metadata_insert(session, name, idxconf));
@@ -971,7 +971,7 @@ __create_table(WT_SESSION_IMPL *session, const char *uri, bool exclusive, const 
         ;
     WT_ERR_NOTFOUND_OK(ret, false);
 
-    WT_ERR(__wt_config_collapse(session, cfg, &tablecfg));
+    WT_ERR(__wti_config_collapse_fast(session, cfg, &tablecfg, NULL));
 
     if (__schema_is_tiered_storage_shared(session, config)) {
         WT_ASSERT(session, import == false);
@@ -994,7 +994,7 @@ __create_table(WT_SESSION_IMPL *session, const char *uri, bool exclusive, const 
             WT_ERR(__wt_snprintf(
               importcfg, len, "%s,import=(enabled,file_metadata=(%s))", tablecfg, filecfg));
             cfg[2] = importcfg;
-            WT_ERR(__wt_config_collapse(session, &cfg[1], &cgcfg));
+            WT_ERR(__wti_config_collapse_fast(session, &cfg[1], &cgcfg, NULL));
             WT_ERR(__create_colgroup(session, cgname, exclusive, cgcfg));
         } else
             WT_ERR(__create_colgroup(session, cgname, exclusive, config));
@@ -1100,7 +1100,7 @@ __create_layered(WT_SESSION_IMPL *session, const char *uri, bool exclusive, cons
       session, tmp, "ingest=\"%s\",stable=\"%s\",log=(enabled=false)", ingest_uri, stable_uri));
     layered_cfg[3] = tmp->data;
 
-    WT_ERR(__wt_config_collapse(session, layered_cfg, &tablecfg));
+    WT_ERR(__wti_config_collapse_fast(session, layered_cfg, &tablecfg, NULL));
     WT_ERR(__wt_metadata_insert(session, uri, tablecfg));
 
     /* Disable logging on the ingest table so we have timestamps. */
@@ -1412,7 +1412,7 @@ __create_fix_file_ids(WT_SESSION_IMPL *session, WT_IMPORT_LIST *import_list)
         WT_RET(__wt_snprintf(fileid_cfg, sizeof(fileid_cfg), "id=%" PRIu32, (uint32_t)new_file_id));
         cfg[0] = import_list->entries[i].config;
         cfg[1] = fileid_cfg;
-        WT_RET(__wt_config_collapse(session, cfg, &config_tmp));
+        WT_RET(__wti_config_collapse_fast(session, cfg, &config_tmp, NULL));
         __wt_free(session, import_list->entries[i].config);
         import_list->entries[i].config = config_tmp;
         import_list->entries[i].file_id = new_file_id;

@@ -1947,7 +1947,15 @@ __conn_single(WT_SESSION_IMPL *session, const char *cfg[])
       session, conn, cfg, WT_OPEN_CONF_disaggregated_page_log, "disaggregated.page_log", &cval));
     is_disag = cval.len > 0;
 
-    bytelock = true;
+    {
+        int64_t local_mode_val = 0;
+        if (is_disag) {
+            WT_RET(__conn_config_get_int(session, conn, cfg,
+              WT_OPEN_CONF_disaggregated_local_mode, "disaggregated.local_mode", &local_mode_val));
+        }
+        /* Allow multi-process readers in disaggregated local mode. */
+        bytelock = local_mode_val == 0;
+    }
     __wt_spin_lock(session, &__wt_process.spinlock);
 
     /*

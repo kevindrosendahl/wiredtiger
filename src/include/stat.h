@@ -864,7 +864,13 @@ struct __wt_connection_stats {
     int64_t cond_auto_wait_reset;
     int64_t cond_auto_wait;
     int64_t cond_auto_wait_skipped;
+    int64_t dhandle_config_rebuilds;
+    int64_t dhandle_config_reuse_attempts;
+    int64_t dhandle_config_reuse_hits;
     int64_t time_travel;
+    int64_t config_collapse_fast_attempts;
+    int64_t config_collapse_fast_fallbacks;
+    int64_t config_collapse_fast_hits;
     int64_t file_open;
     int64_t buckets_dh;
     int64_t buckets;

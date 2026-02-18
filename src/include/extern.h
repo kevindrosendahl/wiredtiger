@@ -255,7 +255,6 @@ extern int __wt_btcur_search_prepared(WT_CURSOR *cursor, WT_UPDATE **updp)
 extern int __wt_btcur_update(WT_CURSOR_BTREE *cbt) WT_GCC_FUNC_DECL_ATTRIBUTE((warn_unused_result));
 extern int __wt_btree_close(WT_SESSION_IMPL *session)
   WT_GCC_FUNC_DECL_ATTRIBUTE((warn_unused_result));
-extern void __wt_btree_conf_cache_clear(WT_SESSION_IMPL *session, WT_DATA_HANDLE *dhandle);
 extern int __wt_btree_config_encryptor(WT_SESSION_IMPL *session, const char **cfg,
   WT_KEYED_ENCRYPTOR **kencryptorp) WT_GCC_FUNC_DECL_ATTRIBUTE((warn_unused_result));
 extern int __wt_btree_discard(WT_SESSION_IMPL *session)
@@ -1394,6 +1393,8 @@ extern int __wti_chunkcache_metadata_create(WT_SESSION_IMPL *session)
   WT_GCC_FUNC_DECL_ATTRIBUTE((warn_unused_result));
 extern int __wti_chunkcache_metadata_destroy(WT_SESSION_IMPL *session)
   WT_GCC_FUNC_DECL_ATTRIBUTE((warn_unused_result));
+extern int __wti_config_collapse_fast(WT_SESSION_IMPL *session, const char **cfg, char **config_ret,
+  bool *used_fast_path) WT_GCC_FUNC_DECL_ATTRIBUTE((warn_unused_result));
 extern int __wti_config_get(WT_SESSION_IMPL *session, const char **cfg_arg, WT_CONFIG_ITEM *key,
   WT_CONFIG_ITEM *value) WT_GCC_FUNC_DECL_ATTRIBUTE((warn_unused_result));
 extern int __wti_conn_compat_config(WT_SESSION_IMPL *session, const char **cfg, bool reconfig)
@@ -1683,6 +1684,7 @@ extern void __wt_bm_set_readonly(WT_SESSION_IMPL *session) WT_GCC_FUNC_DECL_ATTR
 extern void __wt_btcur_free_cached_memory(WT_CURSOR_BTREE *cbt);
 extern void __wt_btcur_init(WT_SESSION_IMPL *session, WT_CURSOR_BTREE *cbt);
 extern void __wt_btcur_open(WT_CURSOR_BTREE *cbt);
+extern void __wt_btree_conf_cache_clear(WT_SESSION_IMPL *session, WT_DATA_HANDLE *dhandle);
 extern void __wt_cache_stats_update(WT_SESSION_IMPL *session);
 extern void __wt_capacity_throttle(WT_SESSION_IMPL *session, uint64_t bytes, WT_THROTTLE_TYPE type);
 extern void __wt_checkpoint_cleanup_trigger(WT_SESSION_IMPL *session);
@@ -2519,6 +2521,8 @@ extern bool __ut_block_first_srch(WT_SESSION_IMPL *session, WT_EXT **head, wt_of
   WT_EXT ***stack) WT_GCC_FUNC_DECL_ATTRIBUTE((warn_unused_result));
 extern bool __ut_block_off_match(WT_EXTLIST *el, wt_off_t off, wt_off_t size)
   WT_GCC_FUNC_DECL_ATTRIBUTE((warn_unused_result));
+extern bool __ut_conn_dhandle_metadata_equal_for_reuse(const char *cached_metaconf,
+  const char *latest_metaconf) WT_GCC_FUNC_DECL_ATTRIBUTE((warn_unused_result));
 extern int WT_CDECL __ut_txn_mod_compare(const void *a, const void *b)
   WT_GCC_FUNC_DECL_ATTRIBUTE((warn_unused_result));
 extern int __ut_block_append(WT_SESSION_IMPL *session, WT_BLOCK *block, WT_EXTLIST *el,

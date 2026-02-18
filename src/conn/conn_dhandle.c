@@ -9,6 +9,26 @@
 #include "wt_internal.h"
 
 /*
+ * __conn_dhandle_reuse_match --
+ *     Check whether the cached metadata can be reused for the latest metadata string.
+ */
+static bool
+__conn_dhandle_reuse_match(WT_DATA_HANDLE *dhandle, const char *metaconf)
+{
+    return (
+      metaconf != NULL && dhandle->cfg != NULL && dhandle->cfg[1] != NULL &&
+      strcmp(dhandle->cfg[1], metaconf) == 0);
+}
+
+/*
+ * Parsed key/value entry used by dhandle metadata canonicalization.
+ */
+typedef struct {
+    WT_CONFIG_ITEM key;
+    WT_CONFIG_ITEM value;
+} WT_DHANDLE_META_ENTRY;
+
+/*
  * __conn_dhandle_config_clear --
  *     Clear the underlying object's configuration information.
  */
@@ -34,23 +54,20 @@ __conn_dhandle_config_clear(WT_SESSION_IMPL *session)
 }
 
 /*
- * __conn_dhandle_config_set --
- *     Set up a btree handle's configuration information.
+ * __conn_dhandle_metadata_lookup --
+ *     Read the metadata configuration string for the current data handle.
  */
 static int
-__conn_dhandle_config_set(WT_SESSION_IMPL *session)
+__conn_dhandle_metadata_lookup(WT_SESSION_IMPL *session, char **metaconf_ret)
 {
     WT_DATA_HANDLE *dhandle;
     WT_DECL_ITEM(name_buf);
     WT_DECL_RET;
-    char *metaconf, *tmp;
-    const char *base, *cfg[5], *dhandle_name, *strip;
+    const char *dhandle_name;
 
+    *metaconf_ret = NULL;
     dhandle = session->dhandle;
     dhandle_name = dhandle->name;
-    base = NULL;
-    metaconf = NULL;
-    tmp = NULL;
 
     /* We should never be looking at metadata before it's been recovered. */
     WT_ASSERT_ALWAYS(session, !F_ISSET(S2C(session), WT_CONN_RECOVERING_METADATA),
@@ -62,11 +79,252 @@ __conn_dhandle_config_set(WT_SESSION_IMPL *session)
     /*
      * Read the object's entry from the metadata file, we're done if we don't find one.
      */
-    if ((ret = __wt_metadata_search(session, dhandle_name, &metaconf)) != 0) {
+    if ((ret = __wt_metadata_search(session, dhandle_name, metaconf_ret)) != 0) {
         if (ret == WT_NOTFOUND)
             ret = __wt_set_return(session, ENOENT);
         WT_ERR(ret);
     }
+
+err:
+    __wt_scr_free(session, &name_buf);
+    return (ret);
+}
+
+/*
+ * __conn_dhandle_meta_base_build_legacy --
+ *     Existing metadata base build implementation.
+ */
+static int
+__conn_dhandle_meta_base_build_legacy(
+  WT_SESSION_IMPL *session, const char *metaconf, char **base_ret)
+{
+    WT_DATA_HANDLE *dhandle;
+    WT_DECL_RET;
+    char *tmp;
+    const char *cfg[5], *strip;
+
+    dhandle = session->dhandle;
+    tmp = NULL;
+    *base_ret = NULL;
+
+    /*
+     * First collapse and overwrite checkpoint information because we do not know the name of or how
+     * many checkpoints may be in this metadata. Similarly, for backup information, we want an empty
+     * category to strip out since we don't know any backup ids. Set them empty and call collapse to
+     * overwrite anything existing.
+     */
+    cfg[0] = metaconf;
+    cfg[1] = "checkpoint=()";
+    cfg[2] = "checkpoint_backup_info=()";
+    cfg[3] = "live_restore=";
+    cfg[4] = NULL;
+    WT_ERR(__wt_config_collapse(session, cfg, &tmp));
+
+    /*
+     * Now strip out the checkpoint and live restore related items from the configuration string and
+     * that is now our base metadata string.
+     */
+    cfg[0] = tmp;
+    cfg[1] = NULL;
+    if (__wt_atomic_load_enum_relaxed(&dhandle->type) == WT_DHANDLE_TYPE_TIERED)
+        strip = "checkpoint=,checkpoint_backup_info=,checkpoint_lsn=,flush_time=,flush_timestamp=,"
+                "last=,tiers=()";
+    else
+        strip = "checkpoint=,checkpoint_backup_info=,checkpoint_lsn=,live_restore=";
+    WT_ERR(__wt_config_merge(session, cfg, strip, (const char **)base_ret));
+
+err:
+    __wt_free(session, tmp);
+    return (ret);
+}
+
+/*
+ * __conn_dhandle_meta_canonicalize --
+ *     Apply collapse-equivalent canonicalization over metadata for keys handled by the legacy
+ *     collapse stage.
+ */
+static int
+__conn_dhandle_meta_canonicalize(
+  WT_SESSION_IMPL *session, const char *metaconf, char **canonical_ret)
+{
+    WT_CONFIG cparser;
+    WT_CONFIG_ITEM k, v;
+    WT_DHANDLE_META_ENTRY *entries;
+    WT_DECL_ITEM(tmp);
+    WT_DECL_RET;
+    size_t checkpoint_backup_info_len, checkpoint_len, entries_allocated, entries_next, i, j,
+      live_restore_len;
+    const char *checkpoint_backup_info_key, *checkpoint_key, *live_restore_key;
+    bool matched_override;
+
+    *canonical_ret = NULL;
+    entries = NULL;
+    entries_allocated = entries_next = 0;
+
+    checkpoint_key = "checkpoint";
+    checkpoint_backup_info_key = "checkpoint_backup_info";
+    live_restore_key = "live_restore";
+    checkpoint_len = strlen(checkpoint_key);
+    checkpoint_backup_info_len = strlen(checkpoint_backup_info_key);
+    live_restore_len = strlen(live_restore_key);
+
+    __wt_config_init(session, &cparser, metaconf);
+    while ((ret = __wt_config_next(&cparser, &k, &v)) == 0) {
+        if (k.type != WT_CONFIG_ITEM_STRING && k.type != WT_CONFIG_ITEM_ID)
+            goto fallback;
+        WT_ERR(__wt_realloc_def(session, &entries_allocated, entries_next + 1, &entries));
+        entries[entries_next].key = k;
+        entries[entries_next].value = v;
+        ++entries_next;
+    }
+    if (ret != WT_NOTFOUND)
+        WT_ERR(ret);
+
+    WT_ERR(__wt_scr_alloc(session, 1024, &tmp));
+
+    for (i = 0; i < entries_next; ++i) {
+        k = entries[i].key;
+        matched_override = false;
+        if (k.len == checkpoint_len && memcmp(k.str, checkpoint_key, checkpoint_len) == 0) {
+            v.str = "()";
+            v.len = 2;
+            v.type = WT_CONFIG_ITEM_STRUCT;
+            matched_override = true;
+        } else if (k.len == checkpoint_backup_info_len &&
+          memcmp(k.str, checkpoint_backup_info_key, checkpoint_backup_info_len) == 0) {
+            v.str = "()";
+            v.len = 2;
+            v.type = WT_CONFIG_ITEM_STRUCT;
+            matched_override = true;
+        } else if (k.len == live_restore_len && memcmp(k.str, live_restore_key, live_restore_len) == 0) {
+            v.str = "";
+            v.len = 0;
+            v.type = WT_CONFIG_ITEM_ID;
+            matched_override = true;
+        }
+
+        if (!matched_override)
+            for (j = entries_next; j > 0; --j)
+                if (entries[j - 1].key.len == k.len &&
+                  memcmp(entries[j - 1].key.str, k.str, k.len) == 0) {
+                    v = entries[j - 1].value;
+                    break;
+                }
+
+        if (k.type == WT_CONFIG_ITEM_STRING)
+            WT_CONFIG_PRESERVE_QUOTES(session, &k);
+        if (v.type == WT_CONFIG_ITEM_STRING)
+            WT_CONFIG_PRESERVE_QUOTES(session, &v);
+        WT_ERR(__wt_buf_catfmt(session, tmp, "%.*s=%.*s,", (int)k.len, k.str, (int)v.len, v.str));
+    }
+
+    if (tmp->size != 0)
+        --tmp->size;
+    WT_ERR(__wt_strndup(session, tmp->data, tmp->size, canonical_ret));
+
+err:
+    __wt_scr_free(session, &tmp);
+    __wt_free(session, entries);
+    return (ret);
+
+fallback:
+    ret = EINVAL;
+    goto err;
+}
+
+/*
+ * __conn_dhandle_meta_base_build --
+ *     Build the metadata base string used for btree and tiered handles.
+ */
+static int
+__conn_dhandle_meta_base_build(WT_SESSION_IMPL *session, const char *metaconf, char **base_ret)
+{
+    WT_DATA_HANDLE *dhandle;
+    WT_DECL_RET;
+    char *canonical, *legacy_base;
+    const char *cfg[2], *strip;
+    bool mismatch;
+
+    dhandle = session->dhandle;
+    *base_ret = NULL;
+    canonical = NULL;
+    legacy_base = NULL;
+    mismatch = false;
+    strip = NULL;
+
+    switch (__wt_atomic_load_enum_relaxed(&dhandle->type)) {
+    case WT_DHANDLE_TYPE_BTREE:
+        strip = "checkpoint=,checkpoint_backup_info=,checkpoint_lsn=,live_restore=";
+        break;
+    case WT_DHANDLE_TYPE_TIERED:
+        strip = "checkpoint=,checkpoint_backup_info=,checkpoint_lsn=,flush_time=,flush_timestamp=,"
+                "last=,tiers=()";
+        break;
+    case WT_DHANDLE_TYPE_LAYERED:
+    case WT_DHANDLE_TYPE_TABLE:
+    case WT_DHANDLE_TYPE_TIERED_TREE:
+        return (__conn_dhandle_meta_base_build_legacy(session, metaconf, base_ret));
+    }
+
+    if ((ret = __conn_dhandle_meta_canonicalize(session, metaconf, &canonical)) != 0)
+        goto fallback;
+
+    cfg[0] = canonical;
+    cfg[1] = NULL;
+    if ((ret = __wt_config_merge(session, cfg, strip, (const char **)base_ret)) != 0)
+        goto fallback;
+
+#ifdef HAVE_DIAGNOSTIC
+    WT_ERR(__conn_dhandle_meta_base_build_legacy(session, metaconf, &legacy_base));
+    mismatch = (*base_ret == NULL) != (legacy_base == NULL);
+    if (!mismatch && *base_ret != NULL && strcmp(*base_ret, legacy_base) != 0)
+        mismatch = true;
+    if (mismatch) {
+        __wt_free(session, *base_ret);
+        *base_ret = legacy_base;
+        legacy_base = NULL;
+    }
+#endif
+    ret = 0;
+    goto done;
+
+fallback:
+    __wt_free(session, *base_ret);
+    *base_ret = NULL;
+    ret = __conn_dhandle_meta_base_build_legacy(session, metaconf, base_ret);
+    goto done;
+
+done:
+    __wt_free(session, canonical);
+    __wt_free(session, legacy_base);
+    return (ret);
+
+err:
+    __wt_free(session, *base_ret);
+    *base_ret = NULL;
+    __wt_free(session, canonical);
+    __wt_free(session, legacy_base);
+    return (ret);
+}
+
+/*
+ * __conn_dhandle_config_set_from_meta --
+ *     Set up a data handle's configuration information from an already-fetched metadata string.
+ */
+static int
+__conn_dhandle_config_set_from_meta(WT_SESSION_IMPL *session, char *metaconf)
+{
+    WT_DATA_HANDLE *dhandle;
+    WT_DECL_RET;
+    char *base, *orig_meta_base;
+    char **dhandle_cfg;
+    const char *base_cfg;
+    size_t i;
+
+    dhandle = session->dhandle;
+    base = NULL;
+    orig_meta_base = NULL;
+    dhandle_cfg = NULL;
 
     /*
      * The defaults are included because persistent configuration information is stored in the
@@ -79,7 +337,7 @@ __conn_dhandle_config_set(WT_SESSION_IMPL *session)
      * in metaconf. If we fail before we copy a reference to it into the object's configuration
      * array, we must free it, after the copy, we don't want to free it.
      */
-    WT_ERR(__wt_calloc_def(session, 4, &dhandle->cfg));
+    WT_ERR(__wt_calloc_def(session, 4, &dhandle_cfg));
     switch (__wt_atomic_load_enum_relaxed(&dhandle->type)) {
     case WT_DHANDLE_TYPE_BTREE:
     case WT_DHANDLE_TYPE_TIERED:
@@ -89,64 +347,64 @@ __conn_dhandle_config_set(WT_SESSION_IMPL *session)
          * concatenate the new checkpoint related information on each checkpoint. The reason is
          * performance and avoiding a lot of calls to the config parsing functions during a
          * checkpoint for information that changes in a very well known way.
-         *
-         * First collapse and overwrite checkpoint information because we do not know the name of or
-         * how many checkpoints may be in this metadata. Similarly, for backup information, we want
-         * an empty category to strip out since we don't know any backup ids. Set them empty and
-         * call collapse to overwrite anything existing.
          */
-        cfg[0] = metaconf;
-        cfg[1] = "checkpoint=()";
-        cfg[2] = "checkpoint_backup_info=()";
-        cfg[3] = "live_restore=";
-        cfg[4] = NULL;
-        WT_ERR(__wt_strdup(session, WT_CONFIG_BASE(session, file_meta), &dhandle->cfg[0]));
+        base_cfg = WT_CONFIG_BASE(session, file_meta);
         WT_ASSERT(session, dhandle->meta_base == NULL);
         WT_ASSERT(session, dhandle->orig_meta_base == NULL);
-        WT_ERR(__wt_config_collapse(session, cfg, &tmp));
-        /*
-         * Now strip out the checkpoint and live restore related items from the configuration string
-         * and that is now our base metadata string.
-         */
-        cfg[0] = tmp;
-        cfg[1] = NULL;
-        if (__wt_atomic_load_enum_relaxed(&dhandle->type) == WT_DHANDLE_TYPE_TIERED)
-            strip =
-              "checkpoint=,checkpoint_backup_info=,checkpoint_lsn=,flush_time=,flush_timestamp=,"
-              "last=,tiers=()";
-        else
-            strip = "checkpoint=,checkpoint_backup_info=,checkpoint_lsn=,live_restore=";
-        WT_ERR(__wt_config_merge(session, cfg, strip, &base));
-        __wt_free(session, tmp);
+        WT_ERR(__conn_dhandle_meta_base_build(session, metaconf, &base));
         break;
     case WT_DHANDLE_TYPE_LAYERED:
-        WT_ERR(__wt_strdup(session, WT_CONFIG_BASE(session, layered_meta), &dhandle->cfg[0]));
+        base_cfg = WT_CONFIG_BASE(session, layered_meta);
         break;
     case WT_DHANDLE_TYPE_TABLE:
-        WT_ERR(__wt_strdup(session, WT_CONFIG_BASE(session, table_meta), &dhandle->cfg[0]));
+        base_cfg = WT_CONFIG_BASE(session, table_meta);
         break;
     case WT_DHANDLE_TYPE_TIERED_TREE:
-        WT_ERR(__wt_strdup(session, WT_CONFIG_BASE(session, tier_meta), &dhandle->cfg[0]));
+        base_cfg = WT_CONFIG_BASE(session, tier_meta);
         break;
+    default:
+        WT_ERR_MSG(session, EINVAL, "illegal handle type %d",
+          (int)__wt_atomic_load_enum_relaxed(&dhandle->type));
     }
-    dhandle->cfg[1] = metaconf;
+    WT_ERR(__wt_strdup(session, base_cfg, &dhandle_cfg[0]));
+#ifdef HAVE_DIAGNOSTIC
+    if (FLD_ISSET(S2C(session)->debug_flags, WT_CONN_DEBUG_DHANDLE_CONFIG_SET_FAIL)) {
+        FLD_CLR(S2C(session)->debug_flags, WT_CONN_DEBUG_DHANDLE_CONFIG_SET_FAIL);
+        WT_ERR_MSG(session, EINVAL,
+          "deterministic failpoint: dhandle config setup failed before metadata assignment");
+    }
+#endif
+    dhandle_cfg[1] = metaconf;
+    metaconf = NULL;
+
+    /* Save the original metadata value for further checks to avoid writing corrupted data. */
+    if (base != NULL)
+        WT_ERR(__wt_strdup(session, base, &orig_meta_base));
+
+    dhandle->cfg = (const char **)dhandle_cfg;
+    dhandle_cfg = NULL;
     dhandle->meta_base = base;
-    /*  Save the original metadata value for further check to avoid writing corrupted data. */
-    if (base != NULL) {
-        dhandle->meta_hash = __wt_hash_city64(base, strlen(base));
+    base = NULL;
+    dhandle->orig_meta_base = orig_meta_base;
+    orig_meta_base = NULL;
+    if (dhandle->meta_base != NULL) {
+        dhandle->meta_hash = __wt_hash_city64(dhandle->meta_base, strlen(dhandle->meta_base));
         __wt_epoch(session, &dhandle->base_upd);
-        WT_ERR(__wt_strdup(session, base, &dhandle->orig_meta_base));
         dhandle->orig_meta_hash = dhandle->meta_hash;
         dhandle->orig_upd = dhandle->base_upd;
     }
-    __wt_scr_free(session, &name_buf);
+
     return (0);
 
 err:
+    if (dhandle_cfg != NULL) {
+        for (i = 0; dhandle_cfg[i] != NULL; ++i)
+            __wt_free(session, dhandle_cfg[i]);
+        __wt_free(session, dhandle_cfg);
+    }
     __wt_free(session, base);
+    __wt_free(session, orig_meta_base);
     __wt_free(session, metaconf);
-    __wt_free(session, tmp);
-    __wt_scr_free(session, &name_buf);
     return (ret);
 }
 
@@ -591,9 +849,12 @@ __wt_conn_dhandle_open(WT_SESSION_IMPL *session, const char *cfg[], uint32_t fla
     WT_BTREE *btree;
     WT_DATA_HANDLE *dhandle;
     WT_DECL_RET;
+    char *metaconf;
+    bool reuse_config;
 
     dhandle = session->dhandle;
     btree = dhandle->handle;
+    metaconf = NULL;
 
     WT_ASSERT(session, F_ISSET(dhandle, WT_DHANDLE_EXCLUSIVE) && !LF_ISSET(WT_DHANDLE_LOCK_ONLY));
 
@@ -616,9 +877,22 @@ __wt_conn_dhandle_open(WT_SESSION_IMPL *session, const char *cfg[], uint32_t fla
     if (F_ISSET(dhandle, WT_DHANDLE_OPEN))
         WT_ERR(__wt_conn_dhandle_close(session, false, false, false));
 
-    /* Discard any previous configuration, set up the new configuration. */
-    __conn_dhandle_config_clear(session);
-    WT_ERR(__conn_dhandle_config_set(session));
+    /* Reuse existing parsed configuration when metadata has not changed. */
+    WT_STAT_CONN_INCR(session, dhandle_config_reuse_attempts);
+    if ((ret = __conn_dhandle_metadata_lookup(session, &metaconf)) != 0) {
+        __conn_dhandle_config_clear(session);
+        WT_ERR(ret);
+    }
+    reuse_config = __conn_dhandle_reuse_match(dhandle, metaconf);
+    if (reuse_config) {
+        WT_STAT_CONN_INCR(session, dhandle_config_reuse_hits);
+        __wt_free(session, metaconf);
+    } else {
+        WT_STAT_CONN_INCR(session, dhandle_config_rebuilds);
+        __conn_dhandle_config_clear(session);
+        WT_ERR(__conn_dhandle_config_set_from_meta(session, metaconf));
+    }
+    metaconf = NULL;
     WT_ERR(__conn_dhandle_config_parse_ts(session));
 
     switch (__wt_atomic_load_enum_relaxed(&dhandle->type)) {
@@ -1125,3 +1399,28 @@ __wti_verbose_dump_handles(WT_SESSION_IMPL *session)
     }
     return (0);
 }
+
+#ifdef HAVE_UNITTEST
+/*
+ * __ut_conn_dhandle_metadata_equal_for_reuse --
+ *     Unit-test helper for WS2 strict metadata equality reuse behavior.
+ */
+bool
+__ut_conn_dhandle_metadata_equal_for_reuse(const char *cached_metaconf, const char *latest_metaconf)
+{
+    WT_DATA_HANDLE dhandle;
+    const char *cfg[3];
+
+    WT_CLEAR(dhandle);
+    WT_CLEAR(cfg);
+
+    if (cached_metaconf != NULL) {
+        cfg[0] = "";
+        cfg[1] = cached_metaconf;
+        cfg[2] = NULL;
+        dhandle.cfg = cfg;
+    }
+
+    return (__conn_dhandle_reuse_match(&dhandle, latest_metaconf));
+}
+#endif
