@@ -9,21 +9,19 @@
 #include "wt_internal.h"
 
 /*
- * __wt_config_collapse --
- *     Collapse a set of configuration strings into newly allocated memory. This function takes a
- *     NULL-terminated list of configuration strings (where the first one contains all the defaults
- *     and the values are in order from least to most preferred, that is, the default values are
- *     least preferred), and collapses them into newly allocated memory. The algorithm is to walk
- *     the first of the configuration strings, and for each entry, search all of the configuration
- *     strings for a final value, keeping the last value found. Notes: Any key not appearing in the
- *     first configuration string is discarded from the final result, because we'll never search for
- *     it. Nested structures aren't parsed. For example, imagine a configuration string contains
- *     "key=(k2=v2,k3=v3)", and a subsequent string has "key=(k4=v4)", the result will be
- *     "key=(k4=v4)", as we search for and use the final value of "key", regardless of field overlap
- *     or missing fields in the nested value.
+ * Parsed key/value entry used by the collapse fast path.
  */
-int
-__wt_config_collapse(WT_SESSION_IMPL *session, const char **cfg, char **config_ret)
+typedef struct {
+    WT_CONFIG_ITEM key;
+    WT_CONFIG_ITEM value;
+} WT_CONFIG_COLLAPSE_ENTRY;
+
+/*
+ * __config_collapse_legacy --
+ *     Existing collapse implementation.
+ */
+static int
+__config_collapse_legacy(WT_SESSION_IMPL *session, const char **cfg, char **config_ret)
 {
     WT_CONFIG cparser;
     WT_CONFIG_ITEM k, v;
@@ -64,6 +62,152 @@ __wt_config_collapse(WT_SESSION_IMPL *session, const char **cfg, char **config_r
 err:
     __wt_scr_free(session, &tmp);
     return (ret);
+}
+
+/*
+ * __config_collapse_fast --
+ *     Fast path for collapse that parses each input configuration string once and uses token-byte
+ *     key identity to resolve final values. Returns with did_fast=true only when the fast path
+ *     fully handled the request.
+ */
+static int
+__config_collapse_fast(
+  WT_SESSION_IMPL *session, const char **cfg, char **config_ret, bool *did_fast)
+{
+    WT_CONFIG cparser;
+    WT_CONFIG_COLLAPSE_ENTRY *entries;
+    WT_CONFIG_ITEM k, v;
+    WT_DECL_ITEM(tmp);
+    WT_DECL_RET;
+    size_t entries_allocated, entries_next, i;
+    const char **cfgp;
+    bool found;
+
+    *config_ret = NULL;
+    *did_fast = false;
+    entries = NULL;
+    entries_allocated = entries_next = 0;
+
+    if (cfg[0] == NULL)
+        goto fallback;
+
+    /*
+     * Parse each configuration string once. If we see a key token type that the legacy search logic
+     * would skip, use the legacy path to preserve behavior.
+     */
+    for (cfgp = cfg; *cfgp != NULL; ++cfgp) {
+        __wt_config_init(session, &cparser, *cfgp);
+        while ((ret = __wt_config_next(&cparser, &k, &v)) == 0) {
+            if (k.type != WT_CONFIG_ITEM_STRING && k.type != WT_CONFIG_ITEM_ID)
+                goto fallback;
+            WT_ERR(
+              __wt_realloc_def(session, &entries_allocated, entries_next + 1, &entries));
+            entries[entries_next].key = k;
+            entries[entries_next].value = v;
+            ++entries_next;
+        }
+        if (ret != WT_NOTFOUND)
+            WT_ERR(ret);
+    }
+
+    WT_ERR(__wt_scr_alloc(session, 1024, &tmp));
+
+    /*
+     * Project output keys from the base string, matching legacy collapse semantics. Fall back for
+     * dotted keys because legacy lookup supports dotted subkey traversal.
+     */
+    __wt_config_init(session, &cparser, cfg[0]);
+    while ((ret = __wt_config_next(&cparser, &k, &v)) == 0) {
+        if (k.type != WT_CONFIG_ITEM_STRING && k.type != WT_CONFIG_ITEM_ID)
+            WT_ERR_MSG(session, EINVAL, "Invalid configuration key found: '%s'", k.str);
+        if (memchr(k.str, '.', k.len) != NULL)
+            goto fallback;
+
+        found = false;
+        for (i = entries_next; i > 0; --i)
+            if (entries[i - 1].key.len == k.len &&
+              memcmp(entries[i - 1].key.str, k.str, k.len) == 0) {
+                v = entries[i - 1].value;
+                found = true;
+                break;
+            }
+        if (!found)
+            goto fallback;
+
+        /* Include the quotes around string keys/values. */
+        if (k.type == WT_CONFIG_ITEM_STRING)
+            WT_CONFIG_PRESERVE_QUOTES(session, &k);
+        if (v.type == WT_CONFIG_ITEM_STRING)
+            WT_CONFIG_PRESERVE_QUOTES(session, &v);
+        WT_ERR(__wt_buf_catfmt(session, tmp, "%.*s=%.*s,", (int)k.len, k.str, (int)v.len, v.str));
+    }
+    if (ret != WT_NOTFOUND)
+        WT_ERR(ret);
+
+    if (tmp->size != 0)
+        --tmp->size;
+    WT_ERR(__wt_strndup(session, tmp->data, tmp->size, config_ret));
+    *did_fast = true;
+
+    __wt_scr_free(session, &tmp);
+    __wt_free(session, entries);
+    return (0);
+
+fallback:
+    __wt_scr_free(session, &tmp);
+    __wt_free(session, entries);
+    return (0);
+
+err:
+    __wt_scr_free(session, &tmp);
+    __wt_free(session, entries);
+    return (ret);
+}
+
+/*
+ * __wti_config_collapse_fast --
+ *     Try fast collapse and deterministically fall back to legacy collapse when unsupported.
+ */
+int
+__wti_config_collapse_fast(
+  WT_SESSION_IMPL *session, const char **cfg, char **config_ret, bool *used_fast_path)
+{
+    bool did_fast;
+
+    if (used_fast_path != NULL)
+        *used_fast_path = false;
+
+    WT_STAT_CONN_INCR(session, config_collapse_fast_attempts);
+    WT_RET(__config_collapse_fast(session, cfg, config_ret, &did_fast));
+    if (did_fast) {
+        WT_STAT_CONN_INCR(session, config_collapse_fast_hits);
+        if (used_fast_path != NULL)
+            *used_fast_path = true;
+        return (0);
+    }
+
+    WT_STAT_CONN_INCR(session, config_collapse_fast_fallbacks);
+    return (__config_collapse_legacy(session, cfg, config_ret));
+}
+
+/*
+ * __wt_config_collapse --
+ *     Collapse a set of configuration strings into newly allocated memory. This function takes a
+ *     NULL-terminated list of configuration strings (where the first one contains all the defaults
+ *     and the values are in order from least to most preferred, that is, the default values are
+ *     least preferred), and collapses them into newly allocated memory. The algorithm is to walk
+ *     the first of the configuration strings, and for each entry, search all of the configuration
+ *     strings for a final value, keeping the last value found. Notes: Any key not appearing in the
+ *     first configuration string is discarded from the final result, because we'll never search for
+ *     it. Nested structures aren't parsed. For example, imagine a configuration string contains
+ *     "key=(k2=v2,k3=v3)", and a subsequent string has "key=(k4=v4)", the result will be
+ *     "key=(k4=v4)", as we search for and use the final value of "key", regardless of field overlap
+ *     or missing fields in the nested value.
+ */
+int
+__wt_config_collapse(WT_SESSION_IMPL *session, const char **cfg, char **config_ret)
+{
+    return (__config_collapse_legacy(session, cfg, config_ret));
 }
 
 /*

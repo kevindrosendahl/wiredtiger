@@ -2240,7 +2240,13 @@ static const char *const __stats_connection_desc[] = {
   "connection: auto adjusting condition resets",
   "connection: auto adjusting condition wait calls",
   "connection: auto adjusting condition wait raced to update timeout and skipped updating",
+  "connection: data handle configuration rebuilds",
+  "connection: data handle configuration reuse checks",
+  "connection: data handle configuration reuse hits",
   "connection: detected system time went backwards",
+  "connection: fast config collapse attempts",
+  "connection: fast config collapse fallbacks",
+  "connection: fast config collapse hits",
   "connection: files currently open",
   "connection: hash bucket array size for data handles",
   "connection: hash bucket array size general",
@@ -3257,7 +3263,13 @@ __wt_stat_connection_clear_single(WT_CONNECTION_STATS *stats)
     stats->cond_auto_wait_reset = 0;
     stats->cond_auto_wait = 0;
     stats->cond_auto_wait_skipped = 0;
+    stats->dhandle_config_rebuilds = 0;
+    stats->dhandle_config_reuse_attempts = 0;
+    stats->dhandle_config_reuse_hits = 0;
     stats->time_travel = 0;
+    stats->config_collapse_fast_attempts = 0;
+    stats->config_collapse_fast_fallbacks = 0;
+    stats->config_collapse_fast_hits = 0;
     /* not clearing file_open */
     /* not clearing buckets_dh */
     /* not clearing buckets */
@@ -4372,7 +4384,13 @@ __wt_stat_connection_aggregate(WT_CONNECTION_STATS **from, WT_CONNECTION_STATS *
     to->cond_auto_wait_reset += WT_STAT_CONN_READ(from, cond_auto_wait_reset);
     to->cond_auto_wait += WT_STAT_CONN_READ(from, cond_auto_wait);
     to->cond_auto_wait_skipped += WT_STAT_CONN_READ(from, cond_auto_wait_skipped);
+    to->dhandle_config_rebuilds += WT_STAT_CONN_READ(from, dhandle_config_rebuilds);
+    to->dhandle_config_reuse_attempts += WT_STAT_CONN_READ(from, dhandle_config_reuse_attempts);
+    to->dhandle_config_reuse_hits += WT_STAT_CONN_READ(from, dhandle_config_reuse_hits);
     to->time_travel += WT_STAT_CONN_READ(from, time_travel);
+    to->config_collapse_fast_attempts += WT_STAT_CONN_READ(from, config_collapse_fast_attempts);
+    to->config_collapse_fast_fallbacks += WT_STAT_CONN_READ(from, config_collapse_fast_fallbacks);
+    to->config_collapse_fast_hits += WT_STAT_CONN_READ(from, config_collapse_fast_hits);
     to->file_open += WT_STAT_CONN_READ(from, file_open);
     to->buckets_dh += WT_STAT_CONN_READ(from, buckets_dh);
     to->buckets += WT_STAT_CONN_READ(from, buckets);
